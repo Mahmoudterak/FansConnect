@@ -121,6 +121,10 @@
 .app-shell { min-height: 100dvh; background: hsl(var(--background)); }
 .sidebar { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); }
 .workspace { min-width: 0; }
+[dir="rtl"] .desktop-sidebar { left: auto; right: 0; border-right: 0; border-left-width: 1px; }
+[dir="rtl"] .workspace { margin-left: 0; margin-right: 248px; }
+[dir="rtl"] .desktop-sidebar .ml-auto { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .language-toggle { left: auto; right: 1.25rem; }
 .page-enter { animation: page-enter .48s cubic-bezier(.22,.8,.24,1) both; }
 .stagger-1 { animation-delay: 60ms; }
 .stagger-2 { animation-delay: 120ms; }
@@ -139,7 +143,9 @@
 
 @media (max-width: 767px) {
   .desktop-sidebar { display: flex; transform: translateX(-100%); }
+  [dir="rtl"] .desktop-sidebar { transform: translateX(100%); }
   .desktop-sidebar.translate-x-0 { transform: translateX(0); }
+  [dir="rtl"] .workspace { margin-right: 0; }
   .mobile-nav { display: flex; }
 }
 @media (min-width: 768px) {

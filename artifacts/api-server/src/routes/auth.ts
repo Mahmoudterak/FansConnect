@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, assistantConfigs, autoReplyRules, businessProfiles, channels, onboardingStates, users, workspaceMembers, workspaces } from "@workspace/db";
+import { db, assistantConfigs, businessProfiles, channels, onboardingStates, users, workspaceMembers, workspaces } from "@workspace/db";
 import { z } from "zod";
-import { clearSessionCookie, getAuth, hashPassword, setSessionCookie, verifyPassword } from "../lib/auth";
+import { authRequired, clearSessionCookie, getAuth, hashPassword, setSessionCookie, verifyPassword } from "../lib/auth";
 
 const router: IRouter = Router();
 const credentials = z.object({
@@ -55,10 +55,11 @@ router.post("/auth/login", async (req, res, next) => {
     await setSessionCookie(res, user.id);
     const [membership] = await db.select({ workspaceId: workspaceMembers.workspaceId }).from(workspaceMembers).where(eq(workspaceMembers.userId, user.id)).limit(1);
     if (!membership) return res.status(409).json({ error: "WORKSPACE_MISSING", message: "This account does not have a workspace." });
+    const [state] = await db.select({ completedAt: onboardingStates.completedAt }).from(onboardingStates).where(eq(onboardingStates.workspaceId, membership.workspaceId)).limit(1);
     return res.json({
       user: { id: user.id, email: user.email, emailVerified: Boolean(user.emailVerifiedAt) },
       workspace: { id: membership.workspaceId },
-      onboardingCompleted: false,
+      onboardingCompleted: Boolean(state?.completedAt),
       requiresEmailVerification: !user.emailVerifiedAt,
     });
   } catch (error) {
@@ -66,17 +67,9 @@ router.post("/auth/login", async (req, res, next) => {
   }
 });
 
-router.get("/auth/session", async (req, res, next) => {
+router.get("/auth/session", authRequired, async (_req, res, next) => {
   try {
-    const fakeResponse = res;
-    const token = req.cookies?.fc_session as string | undefined;
-    if (!token) return res.json({ authenticated: false });
-    const authRouter = await import("../lib/auth");
-    const result = await new Promise<Response>((resolve) => {
-      authRouter.authRequired(req, fakeResponse, () => resolve(fakeResponse));
-    });
-    if (result.statusCode !== 200) return res.json({ authenticated: false });
-    const auth = authRouter.getAuth(res);
+    const auth = getAuth(res);
     const [state] = await db.select({ completedAt: onboardingStates.completedAt }).from(onboardingStates).where(eq(onboardingStates.workspaceId, auth.workspaceId)).limit(1);
     return res.json({ authenticated: true, ...sessionPayload(auth), onboardingCompleted: Boolean(state?.completedAt) });
   } catch (error) {

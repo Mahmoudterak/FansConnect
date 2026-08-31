@@ -1,0 +1,581 @@
+FANSCONNECT — REMOVE INTERNAL META CONFIGURATION FROM CUSTOMER UI
+
+The current Channels page exposes this message to customers:
+
+"Meta provider setup is required. Add META_APP_ID, META_APP_SECRET,
+and META_REDIRECT_URI to start authorization."
+
+THIS IS NOT ACCEPTABLE FOR THE CUSTOMER-FACING APPLICATION.
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+
+are PLATFORM/ADMIN configuration values.
+
+Customers must NEVER be asked to enter them and must NEVER see them.
+
+============================================================
+1. REMOVE INTERNAL CONFIGURATION FROM CUSTOMER UI
+============================================================
+
+Remove from all customer-facing pages:
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+Meta provider setup instructions
+Environment variable names
+OAuth implementation details
+Webhook secrets
+API keys
+Provider credentials
+
+Search the entire frontend for:
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+SENDSBOT_API_KEY
+OPENAI_API_KEY
+
+None of these must appear in the customer UI.
+
+============================================================
+2. CUSTOMER CHANNEL EXPERIENCE
+============================================================
+
+For a new workspace show:
+
+القنوات
+
+اربط قنوات التواصل الخاصة بنشاطك لبدء استقبال رسائل العملاء
+وإدارتها من مكان واحد.
+
+--------------------------------
+
+WhatsApp Business
+
+غير متصل
+
+اربط حساب WhatsApp Business الخاص بنشاطك للبدء في استقبال
+رسائل العملاء.
+
+[ ربط WhatsApp ]
+
+--------------------------------
+
+Instagram
+
+غير متصل
+
+اربط حساب Instagram Business الخاص بنشاطك لإدارة الرسائل
+من خلال FansConnect.
+
+[ ربط Instagram ]
+
+============================================================
+3. OAUTH ARCHITECTURE
+============================================================
+
+The Meta OAuth configuration belongs to FansConnect server-side.
+
+Customer flow:
+
+Customer clicks:
+
+"ربط WhatsApp"
+
+↓
+
+Frontend calls backend connection endpoint
+
+↓
+
+Backend starts Meta OAuth using:
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+
+↓
+
+Customer is redirected to Meta
+
+↓
+
+Customer authorizes FansConnect
+
+↓
+
+Meta redirects back to backend
+
+↓
+
+Backend validates callback
+
+↓
+
+Backend stores only the required customer/channel credentials
+securely and encrypted where applicable
+
+↓
+
+Backend verifies the WhatsApp Business connection
+
+↓
+
+Channel becomes:
+
+CONNECTED
+
+ONLY after successful verification.
+
+============================================================
+4. DO NOT EXPOSE SECRETS
+============================================================
+
+Never send these values to the browser:
+
+META_APP_SECRET
+META_ACCESS_TOKEN
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+SENDSBOT_API_KEY
+OPENAI_API_KEY
+
+Do not include them in API responses.
+
+Do not include them in frontend JavaScript bundles.
+
+Do not log them.
+
+============================================================
+5. SETUP MISSING STATE
+============================================================
+
+There is an important distinction.
+
+If the PLATFORM administrator has not configured Meta:
+
+The customer should NOT see:
+
+"Add META_APP_ID..."
+
+Instead the customer sees a generic state such as:
+
+"تعذر بدء ربط WhatsApp حالياً."
+
+"يرجى المحاولة لاحقاً."
+
+The detailed configuration problem should appear ONLY in:
+
+Super Admin
+or
+server logs
+
+Example internal admin error:
+
+META provider configuration is incomplete.
+
+The customer must never see environment variable names.
+
+============================================================
+6. ADMIN CONFIGURATION
+============================================================
+
+Create/retain an internal configuration area for Super Admin only.
+
+Super Admin can see provider status:
+
+Meta:
+Configured / Not configured
+
+WhatsApp:
+Provider ready / Not ready
+
+Instagram:
+Provider ready / Not ready
+
+But NEVER expose:
+
+META_APP_SECRET
+
+or other secret values after saving.
+
+Use masked status only.
+
+Example:
+
+Meta Provider
+● Configured
+
+NOT:
+
+META_APP_SECRET = xxxxxxxxx
+
+============================================================
+7. CHANNEL STATES
+============================================================
+
+Customer-facing states:
+
+غير متصل
+جارٍ الربط
+متصل
+حدث خطأ
+متوقف مؤقتاً
+
+English:
+
+Not connected
+Connecting
+Connected
+Error
+Paused
+
+Do not use:
+
+Not ready
+Setup required
+
+when the actual problem is internal platform configuration.
+
+============================================================
+8. CONNECT BUTTON
+============================================================
+
+When the platform is correctly configured:
+
+[ ربط WhatsApp ]
+
+must actually initiate the OAuth process.
+
+It must NOT:
+
+open a fake modal
+show configuration variables
+pretend to connect
+set status to Connected without verification
+
+============================================================
+9. WHATSAPP BUSINESS
+============================================================
+
+After successful connection display actual verified data:
+
+WhatsApp Business
+متصل
+
+اسم النشاط
+[REAL META BUSINESS NAME]
+
+رقم الهاتف
+[REAL VERIFIED NUMBER]
+
+حالة الاتصال
+متصل
+
+آخر تحقق
+[REAL TIMESTAMP]
+
+الرسائل هذا الشهر
+[REAL DATABASE VALUE]
+
+Do not fabricate any of these values.
+
+============================================================
+10. DISCONNECT
+============================================================
+
+Once connected, allow:
+
+إدارة الاتصال
+إيقاف القناة
+إعادة الاتصال
+
+If disconnecting:
+
+require confirmation.
+
+The database channel state must be updated.
+
+============================================================
+11. INSTAGRAM
+============================================================
+
+Apply the same architecture to Instagram.
+
+Customer:
+
+ربط Instagram
+
+↓
+
+Meta OAuth
+
+↓
+
+Instagram Business verification
+
+↓
+
+CONNECTED
+
+Never ask the customer for:
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+
+============================================================
+12. API SECURITY
+============================================================
+
+Provider configuration endpoints must be protected.
+
+Customer users must not be able to:
+
+GET Meta secrets
+GET provider configuration secrets
+PATCH provider secrets
+GET environment variables
+
+Only authorized Super Admin/server configuration may access
+provider configuration metadata.
+
+============================================================
+13. ERROR HANDLING
+============================================================
+
+If Meta is not configured server-side:
+
+Backend logs detailed reason.
+
+Customer receives:
+
+"تعذر بدء ربط WhatsApp حالياً. حاول مرة أخرى لاحقاً."
+
+HTTP status should be appropriate.
+
+Do not expose:
+
+META_APP_ID
+META_APP_SECRET
+META_REDIRECT_URI
+
+============================================================
+14. ARABIC
+============================================================
+
+The Channels page must work completely in Arabic RTL.
+
+Use:
+
+القنوات
+
+WhatsApp Business
+
+غير متصل
+
+ربط WhatsApp
+
+Instagram
+
+غير متصل
+
+ربط Instagram
+
+============================================================
+15. ENGLISH
+============================================================
+
+English LTR must remain supported.
+
+Use:
+
+Channels
+
+WhatsApp Business
+
+Not connected
+
+Connect WhatsApp
+
+Instagram
+
+Not connected
+
+Connect Instagram
+
+============================================================
+16. REMOVE THE CURRENT MESSAGE
+============================================================
+
+Completely remove this customer-facing message:
+
+"Meta provider setup is required. Add META_APP_ID, META_APP_SECRET,
+and META_REDIRECT_URI to start authorization."
+
+It must NEVER appear in the customer UI.
+
+============================================================
+17. CHECK ALL PAGES
+============================================================
+
+Search customer-facing React components for internal configuration
+leaks.
+
+Especially:
+
+Channels
+Billing
+AI Assistant
+Settings
+Business Profile
+Onboarding
+FAQ
+Training
+Flows
+
+No API keys.
+No secrets.
+No environment variable names.
+No internal provider configuration.
+
+============================================================
+18. BILLING
+============================================================
+
+Apply the same rule to Ziina.
+
+Customers see:
+
+الباقة والفوترة
+الباقة الحالية
+السعر
+الاستخدام
+الفواتير
+حالة الدفع
+الدفع
+ترقية الباقة
+
+Customers MUST NOT see:
+
+قم بتوصيل Ziina
+
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+
+============================================================
+19. TEST
+============================================================
+
+Test with a normal customer account.
+
+Open:
+
+/app/channels
+
+Expected:
+
+NO META_APP_ID
+NO META_APP_SECRET
+NO META_REDIRECT_URI
+NO API KEY
+NO WEBHOOK SECRET
+
+If Meta is configured:
+
+Click "ربط WhatsApp"
+
+Verify real OAuth starts.
+
+If Meta is not configured:
+
+Verify only a generic customer-safe error is shown.
+
+============================================================
+20. SUPER ADMIN TEST
+============================================================
+
+Verify Super Admin can determine:
+
+Meta configured = YES/NO
+
+without exposing secrets in the frontend.
+
+============================================================
+21. BUILD
+============================================================
+
+Run:
+
+npm test
+npm run build
+
+Then launch Preview.
+
+Actually test the Channels page.
+
+============================================================
+FINAL ACCEPTANCE
+============================================================
+
+Customer UI:
+
+Internal Meta credentials hidden:
+PASS
+
+Internal Ziina credentials hidden:
+PASS
+
+Internal Sends Bot credentials hidden:
+PASS
+
+Internal OpenAI credentials hidden:
+PASS
+
+WhatsApp OAuth:
+PASS / FAIL
+
+Instagram OAuth:
+PASS / FAIL
+
+Channel state:
+PASS / FAIL
+
+Arabic:
+PASS / FAIL
+
+RTL:
+PASS / FAIL
+
+English:
+PASS / FAIL
+
+LTR:
+PASS / FAIL
+
+No fake Connected state:
+PASS
+
+No demo data:
+PASS
+
+Security:
+PASS / FAIL
+
+Build:
+PASS / FAIL
+
+Tests:
+PASS / FAIL
+
+Preview:
+PASS / FAIL
+
+Do not mark complete until the actual customer-facing Preview has
+been tested.

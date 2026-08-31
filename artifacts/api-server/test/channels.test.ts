@@ -263,7 +263,10 @@ describe("Meta channel connection safety", () => {
     });
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
-    assert.match(String(response.json.message), /Invalid provider authorization state/);
+    assert.equal(
+      response.json.message,
+      "Unable to connect this channel right now. Please try again later.",
+    );
     assert.equal((response.json.channel as Json).status, "failed");
   });
 
@@ -281,7 +284,10 @@ describe("Meta channel connection safety", () => {
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
     assert.equal((response.json.channel as Json).status, "failed");
-    assert.equal((response.json.channel as Json).failureReason, "Token was rejected by Meta");
+    assert.equal(
+      (response.json.channel as Json).failureReason,
+      "Unable to connect this channel right now. Please try again later.",
+    );
   });
 
   it("allows only an owner to disconnect a channel and clears its credentials", async () => {

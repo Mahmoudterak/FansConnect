@@ -3,7 +3,6 @@ import { Router, type IRouter, type Request } from "express";
 
 type ChannelName = "whatsapp" | "instagram";
 type ChannelStatus =
-  | "setup_required"
   | "connecting"
   | "connected"
   | "degraded"
@@ -48,6 +47,7 @@ type ConversationRecord = {
 const router: IRouter = Router();
 const channelsByWorkspace = new Map<string, Map<ChannelName, ChannelRecord>>();
 const conversationsByWorkspace = new Map<string, ConversationRecord[]>();
+const CUSTOMER_CONNECTION_ERROR = "Unable to connect this channel right now. Please try again later.";
 
 const channelLabels: Record<ChannelName, string> = {
   whatsapp: "WhatsApp Business",
@@ -76,8 +76,8 @@ function workspaceChannels(workspaceId: string): Map<ChannelName, ChannelRecord>
   let channels = channelsByWorkspace.get(workspaceId);
   if (!channels) {
     channels = new Map([
-      ["whatsapp", { channel: "whatsapp", status: "setup_required" }],
-      ["instagram", { channel: "instagram", status: "setup_required" }],
+      ["whatsapp", { channel: "whatsapp", status: "disconnected" }],
+      ["instagram", { channel: "instagram", status: "disconnected" }],
     ]);
     channelsByWorkspace.set(workspaceId, channels);
   }
@@ -97,8 +97,8 @@ function healthFor(record: ChannelRecord) {
     return {
       state: "failed",
       verified: false,
-      message: record.failureReason || "Provider verification failed.",
-      action: "Reconnect and verify the provider credentials.",
+      message: record.failureReason || CUSTOMER_CONNECTION_ERROR,
+      action: "Try connecting again later.",
     };
   }
   if (record.status === "connecting") {
@@ -118,10 +118,10 @@ function healthFor(record: ChannelRecord) {
     };
   }
   return {
-    state: "setup_required",
+    state: "disconnected",
     verified: false,
-    message: "Provider setup is required before this channel can receive messages.",
-    action: "Configure Meta provider credentials, then connect this channel.",
+    message: "Connect this channel to start receiving customer messages.",
+    action: null,
   };
 }
 
@@ -162,8 +162,7 @@ function setupResponse(channel: ChannelRecord) {
   } = {
     channel: serializeChannel(channel),
     connectUrl: null,
-    message:
-      "Meta provider setup is required. Add META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI to start authorization.",
+    message: CUSTOMER_CONNECTION_ERROR,
   };
 
   if (config.appId && config.appSecret && config.redirectUri) {
@@ -644,8 +643,9 @@ router.post("/workspaces/:workspaceId/channels/:channel/connect", async (req, re
       ),
     );
   } catch (error) {
+    req.log?.error({ err: error, workspaceId, channel: channel.channel }, "Channel connection failed");
     channel.status = "failed";
-    channel.failureReason = error instanceof Error ? error.message : "Provider verification failed.";
+    channel.failureReason = CUSTOMER_CONNECTION_ERROR;
     channel.failureCode = "provider_verification_failed";
     return res.status(502).json({
       error: channel.failureCode,
@@ -665,8 +665,9 @@ router.get("/workspaces/:workspaceId/channels/:channel/callback", async (req, re
   try {
     return res.json(await connectChannel(channel, code, undefined, state));
   } catch (error) {
+    req.log?.error({ err: error, workspaceId, channel: channel.channel }, "Channel callback failed");
     channel.status = "failed";
-    channel.failureReason = error instanceof Error ? error.message : "Provider verification failed.";
+    channel.failureReason = CUSTOMER_CONNECTION_ERROR;
     channel.failureCode = "provider_verification_failed";
     return res.status(502).json({
       error: channel.failureCode,
@@ -686,8 +687,9 @@ router.get("/oauth/meta/callback", async (req, res) => {
     try {
       return res.json(await connectChannel(channel, code, undefined, state));
     } catch (error) {
+      req.log?.error({ err: error, channel: channel.channel }, "Meta callback failed");
       channel.status = "failed";
-      channel.failureReason = error instanceof Error ? error.message : "Provider verification failed.";
+      channel.failureReason = CUSTOMER_CONNECTION_ERROR;
       channel.failureCode = "provider_verification_failed";
       return res.status(502).json({
         error: channel.failureCode,
@@ -755,13 +757,14 @@ router.post("/workspaces/:workspaceId/conversations/:conversationId/replies", as
     conversation.handoff = "team";
     return res.status(201).json({ message, conversation });
   } catch (error) {
+    req.log?.error({ err: error, workspaceId, conversationId: conversation.id }, "Provider reply failed");
     channel.status = "failed";
-    channel.failureReason = error instanceof Error ? error.message : "Provider rejected the message.";
+    channel.failureReason = "The message could not be sent right now.";
     channel.failureCode = "provider_send_failed";
     return res.status(502).json({
       error: "provider_send_failed",
-      message: error instanceof Error ? error.message : "Provider rejected the message.",
-      action: "Check channel credentials and provider permissions.",
+      message: "The message could not be sent right now. Please try again later.",
+      action: "Try again later.",
     });
   }
 });
@@ -794,13 +797,14 @@ router.post("/workspaces/:workspaceId/conversations/:conversationId/handoff", as
       conversation.messages.push(message);
       conversation.updatedAt = message.timestamp;
     } catch (error) {
+      req.log?.error({ err: error, workspaceId, conversationId: conversation.id }, "Provider handoff failed");
       channel.status = "failed";
-      channel.failureReason = error instanceof Error ? error.message : "Provider rejected the handoff message.";
+      channel.failureReason = "The handoff could not be completed right now.";
       channel.failureCode = "provider_send_failed";
       return res.status(502).json({
         error: "provider_send_failed",
-        message: error instanceof Error ? error.message : "Provider rejected the handoff message.",
-        action: "Check channel credentials and provider permissions.",
+        message: "The handoff could not be completed right now. Please try again later.",
+        action: "Try again later.",
       });
     }
   }
