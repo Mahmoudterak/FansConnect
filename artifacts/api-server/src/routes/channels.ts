@@ -326,6 +326,22 @@ function conversationList(workspaceId: string) {
   return list;
 }
 
+function findInboundMessage(
+  conversations: ConversationRecord[],
+  channel: ChannelName,
+  providerMessageId?: string,
+) {
+  if (!providerMessageId) return null;
+  for (const conversation of conversations) {
+    if (conversation.channel !== channel) continue;
+    const message = conversation.messages.find(
+      (item) => item.from === "customer" && item.providerMessageId === providerMessageId,
+    );
+    if (message) return { conversation, message };
+  }
+  return null;
+}
+
 function providerAccountIdsFromPayload(payload: Record<string, unknown>): string[] {
   const ids = new Set<string>();
   if (typeof payload.object === "string" && Array.isArray(payload.entry)) {
@@ -503,6 +519,9 @@ function ingestEvent(
   const conversations = conversationList(workspaceId);
 
   if (eventType === "message.received") {
+    const existing = findInboundMessage(conversations, channel, providerMessageId);
+    if (existing) return existing.conversation;
+
     const contactAddress =
       typeof event.from === "string" ? event.from : typeof event.senderId === "string" ? event.senderId : "";
     const text = typeof event.text === "string" ? event.text.trim() : "";

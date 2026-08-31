@@ -323,6 +323,47 @@ describe("Meta webhook ingestion", () => {
     assert.equal((conversation.messages as Json[])[0].text, "Hello from WhatsApp");
   });
 
+  it("acknowledges retried WhatsApp and Instagram messages without duplicating them", async () => {
+    const cases = [
+      {
+        workspaceId: "whatsapp-retry",
+        channel: "whatsapp" as const,
+        providerAccountId: "whatsapp-retry-phone",
+        payload: whatsappPayload("whatsapp-retry-phone", "971500000004", "wamid-retry"),
+      },
+      {
+        workspaceId: "instagram-retry",
+        channel: "instagram" as const,
+        providerAccountId: "instagram-retry-business",
+        payload: instagramPayload("instagram-retry-business", "instagram-retry-user", "ig-retry"),
+      },
+    ];
+
+    for (const testCase of cases) {
+      await connectChannel(testCase.workspaceId, testCase.channel, testCase.providerAccountId);
+      const firstDelivery = await signedWebhook(
+        `/api/webhooks/${testCase.channel}`,
+        testCase.payload,
+      );
+      const retryDelivery = await signedWebhook(
+        `/api/webhooks/${testCase.channel}`,
+        testCase.payload,
+      );
+
+      assert.equal(firstDelivery.status, 202);
+      assert.equal(retryDelivery.status, 202);
+      assert.equal(firstDelivery.json.accepted, 1);
+      assert.equal(retryDelivery.json.accepted, 1);
+
+      const conversations = await request(
+        `/api/workspaces/${testCase.workspaceId}/conversations?channel=${testCase.channel}`,
+      );
+      const workspaceConversations = conversations.json.conversations as Json[];
+      assert.equal(workspaceConversations.length, 1);
+      assert.equal((workspaceConversations[0].messages as Json[]).length, 1);
+    }
+  });
+
   it("maps a native Instagram payload into a workspace conversation and message", async () => {
     await connectChannel("instagram-inbound", "instagram", "instagram-business");
     const response = await signedWebhook(
