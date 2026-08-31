@@ -1,0 +1,510 @@
+FANSCONNECT — FINALIZE CHANNEL + INBOX PERSISTENCE
+
+The authentication, onboarding, tenant isolation, empty workspace,
+Arabic RTL, customer-safe provider configuration, and activation gate
+are now verified.
+
+Do NOT redo those areas.
+
+The remaining tracked issue is:
+
+"Channel and inbox persistence across API restarts remains tracked
+separately and is not being claimed as complete."
+
+This must now be resolved.
+
+============================================================
+1. CHANNEL PERSISTENCE
+============================================================
+
+Channel configuration and state MUST survive an API restart.
+
+The database must be the source of truth.
+
+For Sends Bot persist:
+
+tenantId
+provider
+deviceId
+status
+connection metadata where appropriate
+last verification
+health data where appropriate
+
+Do NOT rely on:
+
+process memory
+in-memory maps
+React state
+temporary runtime objects
+
+After API restart:
+
+the same workspace must still have the same channel configuration.
+
+============================================================
+2. SENDS BOT CHANNEL
+============================================================
+
+Use the existing Sends Bot architecture.
+
+Persist:
+
+provider = SENDS_BOT
+sendsBotDeviceId
+connection status
+
+Never store:
+
+SENDSBOT_API_KEY
+
+inside customer records.
+
+The API key remains server-side only.
+
+============================================================
+3. CHANNEL REHYDRATION
+============================================================
+
+When the API starts:
+
+load channel configuration from PostgreSQL.
+
+Do not initialize channels from a hard-coded default if a persisted
+channel already exists.
+
+Default only applies to a genuinely new workspace.
+
+============================================================
+4. CHANNEL STATUS
+============================================================
+
+Do not automatically convert:
+
+NOT_CONNECTED
+
+to:
+
+CONNECTED
+
+after restart.
+
+CONNECTED must represent a verified/known-good channel state according
+to the existing provider architecture.
+
+If re-verification is required after restart, use:
+
+CONNECTED
+or
+RECONNECTING
+
+according to the actual provider state.
+
+Never fake verification.
+
+============================================================
+5. INBOX PERSISTENCE
+============================================================
+
+Inbox conversations and messages MUST survive API restart.
+
+Persist:
+
+Contact
+Conversation
+Inbound Message
+Outbound Message
+Message status
+Provider message ID
+Timestamp
+Channel
+Tenant
+
+After restart:
+
+GET /api/workspace/conversations
+
+must return the same persisted conversations.
+
+============================================================
+6. UNREAD COUNT
+============================================================
+
+Unread count must be calculated from PostgreSQL.
+
+Never:
+
+let unread count exist only in memory.
+
+After API restart:
+
+the unread count must remain correct.
+
+============================================================
+7. MESSAGE STATUS
+============================================================
+
+Persist message status.
+
+Possible examples:
+
+RECEIVED
+QUEUED
+SENT
+DELIVERED
+FAILED
+
+Use the existing project enum/model where applicable.
+
+Do not introduce duplicate enums unnecessarily.
+
+============================================================
+8. PROVIDER MESSAGE ID
+============================================================
+
+For outgoing Sends Bot messages:
+
+save the actual provider message ID.
+
+After API restart:
+
+the message must still be associated with the correct conversation.
+
+============================================================
+9. WEBHOOK PERSISTENCE
+============================================================
+
+WebhookEvent records must survive restart.
+
+Duplicate detection must continue working after restart.
+
+Test:
+
+Webhook A
+→ processed
+
+Restart API
+
+Webhook A again
+→ recognized as duplicate
+
+No second customer message.
+
+No second bot response.
+
+============================================================
+10. CONTACT PERSISTENCE
+============================================================
+
+A real incoming WhatsApp contact must survive API restart.
+
+Example:
+
+Customer:
+محمد
+
+Phone:
+966500000000
+
+After restart:
+
+Contacts page must still show محمد.
+
+============================================================
+11. CONVERSATION PERSISTENCE
+============================================================
+
+A real WhatsApp conversation must survive API restart.
+
+Before restart:
+
+1 conversation
+5 messages
+
+After restart:
+
+1 conversation
+5 messages
+
+Do not lose history.
+
+============================================================
+12. WORKSPACE ISOLATION
+============================================================
+
+Restart must not cause data from one tenant to be loaded into another.
+
+Test:
+
+Tenant A
+Conversation A
+
+Tenant B
+Conversation B
+
+After restart:
+
+A sees A only.
+B sees B only.
+
+============================================================
+13. NO SNAPSHOT OVERWRITE
+============================================================
+
+Preserve the previous concurrency fix.
+
+Do NOT restore:
+
+full snapshot writes
+stale snapshot replacement
+process-only persistence
+
+Continue using:
+
+locked reload
+→ mutate
+→ commit
+
+where that architecture is required.
+
+============================================================
+14. REAL DATABASE TEST
+============================================================
+
+Run a persistence test:
+
+1. Create Workspace.
+2. Create Channel.
+3. Create Contact.
+4. Create Conversation.
+5. Create Messages.
+6. Create FAQ.
+7. Create Auto Reply.
+8. Restart API.
+9. Reload everything from API.
+
+Verify all records remain.
+
+============================================================
+15. FAQ PERSISTENCE
+============================================================
+
+Create:
+
+Question:
+كم سعر الخدمة؟
+
+Answer:
+سعر الخدمة 199 درهم.
+
+Restart API.
+
+Verify FAQ still exists.
+
+Then send a matching message through the engine.
+
+Verify the persisted FAQ is still used.
+
+============================================================
+16. AUTO REPLY PERSISTENCE
+============================================================
+
+Create an Auto Reply.
+
+Restart API.
+
+Send matching message.
+
+Verify it still responds.
+
+============================================================
+17. AI CONFIGURATION PERSISTENCE
+============================================================
+
+Configure:
+
+personality
+language
+dialect
+response length
+business rules
+
+Restart API.
+
+Verify configuration remains.
+
+============================================================
+18. ONBOARDING PERSISTENCE
+============================================================
+
+Create a partially completed onboarding.
+
+Restart API.
+
+Verify the user resumes at the correct step.
+
+Do not reset onboarding progress.
+
+============================================================
+19. DASHBOARD PERSISTENCE
+============================================================
+
+Dashboard metrics must continue to come from PostgreSQL.
+
+Restart API.
+
+Verify metrics remain consistent.
+
+No fake fallback.
+
+============================================================
+20. TEST ACTUAL SENDS BOT
+============================================================
+
+If real SENDSBOT_API_KEY and device are configured:
+
+Perform a real provider smoke test.
+
+If not configured:
+
+DO NOT fabricate the result.
+
+Report:
+
+Sends Bot live verification:
+NOT AVAILABLE — credentials/device not configured
+
+Mock provider tests may still PASS.
+
+============================================================
+21. BROWSER TEST
+============================================================
+
+Use Preview.
+
+Test:
+
+Channels
+Inbox
+Contacts
+FAQ
+Auto Replies
+Training
+Dashboard
+
+Create real data.
+
+Restart API.
+
+Refresh browser.
+
+Verify data remains.
+
+============================================================
+22. SECURITY
+============================================================
+
+Verify no provider secrets appear in:
+
+API responses
+React
+logs
+browser storage
+database customer configuration
+
+============================================================
+23. BUILD
+============================================================
+
+Run:
+
+npm test
+npm run build
+
+API typecheck
+Frontend typecheck
+
+Fix any newly introduced errors.
+
+Do not hide errors.
+
+============================================================
+24. FINAL ACCEPTANCE
+============================================================
+
+CHANNEL PERSISTENCE:
+PASS / FAIL
+
+INBOX PERSISTENCE:
+PASS / FAIL
+
+MESSAGE PERSISTENCE:
+PASS / FAIL
+
+CONTACT PERSISTENCE:
+PASS / FAIL
+
+CONVERSATION PERSISTENCE:
+PASS / FAIL
+
+UNREAD COUNT:
+PASS / FAIL
+
+WEBHOOK IDEMPOTENCY AFTER RESTART:
+PASS / FAIL
+
+FAQ PERSISTENCE:
+PASS / FAIL
+
+AUTO REPLY PERSISTENCE:
+PASS / FAIL
+
+AI CONFIG PERSISTENCE:
+PASS / FAIL
+
+ONBOARDING PERSISTENCE:
+PASS / FAIL
+
+DASHBOARD PERSISTENCE:
+PASS / FAIL
+
+TENANT ISOLATION:
+PASS / FAIL
+
+NO SNAPSHOT OVERWRITE:
+PASS / FAIL
+
+SENDSBOT LIVE:
+PASS / NOT VERIFIED
+
+BUILD:
+PASS / FAIL
+
+API TYPECHECK:
+PASS / FAIL
+
+FRONTEND TYPECHECK:
+PASS / FAIL
+
+TESTS:
+PASS / FAIL
+
+BROWSER:
+PASS / FAIL
+
+============================================================
+FINAL REPORT
+============================================================
+
+Clearly distinguish:
+
+1. Features verified against PostgreSQL.
+2. Features verified only with mocks.
+3. Features requiring external credentials.
+4. Any remaining blockers.
+
+Do not claim Sends Bot is operational unless a real WhatsApp message
+was actually received and a real response was delivered.
+
+Do not claim persistence is complete until the restart test has been
+performed against the running API.
