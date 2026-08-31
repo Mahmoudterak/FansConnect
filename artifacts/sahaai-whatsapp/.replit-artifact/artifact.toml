@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SahaAI WhatsApp Platform"
+description = "A customer-service SaaS platform for businesses to connect WhatsApp, configure AI assistants, manage conversations, contacts, leads, appointments, analytics, and subscriptions from one focused workspace."
+version = "1.0.0"
+id = "artifacts/sahaai-whatsapp"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23876
+
+[services.development]
+run = "pnpm --filter @workspace/sahaai-whatsapp run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sahaai-whatsapp", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sahaai-whatsapp/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23876"
+BASE_PATH = "/"
