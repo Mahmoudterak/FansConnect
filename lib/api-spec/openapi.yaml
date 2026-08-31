@@ -50,6 +50,7 @@ paths:
       operationId: listWorkspaceChannels
       tags: [channels]
       summary: List channel connection state
+      description: Returns the persisted provider connection state for this workspace. Provider access tokens are never included.
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
       responses:
@@ -163,6 +164,7 @@ paths:
       operationId: listWorkspaceConversations
       tags: [conversations]
       summary: List real inbox conversations
+      description: Returns persisted conversation history and message delivery state for this workspace.
       parameters:
         - $ref: "#/components/parameters/WorkspaceId"
         - name: channel

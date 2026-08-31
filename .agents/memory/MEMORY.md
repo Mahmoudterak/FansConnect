@@ -1,1 +1,3 @@
 - [Integration readiness boundary](integration-readiness.md) — preview surfaces must distinguish setup-required states from connected production data.
+- [Authentication email origins](auth-email-origins.md) — emailed action links must use a canonical configured origin, never request or forwarded host headers.
+- [Cookie request origins](cookie-request-origins.md) — same-site sibling domains can bypass SameSite assumptions; unsafe cookie requests need an exact canonical-origin check.

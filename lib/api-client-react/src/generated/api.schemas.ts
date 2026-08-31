@@ -206,10 +206,12 @@ export interface WebhookEvent {
 export type ListWorkspaceChannels200 = {
   channels: Channel[];
 };
+
 export type CompleteWorkspaceChannelConnectionParams = {
 code: string;
 state?: string;
 };
+
 export type CompleteMetaOAuthConnectionParams = {
 code: string;
 state: string;

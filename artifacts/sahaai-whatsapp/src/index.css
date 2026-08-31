@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -120,11 +120,17 @@
 
 .app-shell { min-height: 100dvh; background: hsl(var(--background)); }
 .sidebar { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); }
-.workspace { min-width: 0; }
-[dir="rtl"] .desktop-sidebar { left: auto; right: 0; border-right: 0; border-left-width: 1px; }
-[dir="rtl"] .workspace { margin-left: 0; margin-right: 248px; }
-[dir="rtl"] .desktop-sidebar .ml-auto { margin-left: 0; margin-right: auto; }
-[dir="rtl"] .language-toggle { left: auto; right: 1.25rem; }
+.desktop-sidebar { inset-inline-start: 0; border-inline-end-width: 1px; }
+.workspace { min-width: 0; margin-inline-start: 248px; }
+.profile-menu { inset-inline-end: 0; }
+.language-toggle { inset-inline-start: 1.25rem; }
+.field-icon { inset-inline-end: .75rem; }
+html[dir='rtl'] body,
+html[dir='rtl'] button,
+html[dir='rtl'] input,
+html[dir='rtl'] textarea,
+html[dir='rtl'] select { font-family: 'Noto Sans Arabic', 'DM Sans', sans-serif; }
+html[dir='rtl'] .font-display { font-family: 'Noto Sans Arabic', 'Manrope', sans-serif; }
 .page-enter { animation: page-enter .48s cubic-bezier(.22,.8,.24,1) both; }
 .stagger-1 { animation-delay: 60ms; }
 .stagger-2 { animation-delay: 120ms; }
@@ -143,9 +149,9 @@
 
 @media (max-width: 767px) {
   .desktop-sidebar { display: flex; transform: translateX(-100%); }
-  [dir="rtl"] .desktop-sidebar { transform: translateX(100%); }
+  html[dir='rtl'] .desktop-sidebar { transform: translateX(100%); }
   .desktop-sidebar.translate-x-0 { transform: translateX(0); }
-  [dir="rtl"] .workspace { margin-right: 0; }
+  .workspace { margin-inline-start: 0; }
   .mobile-nav { display: flex; }
 }
 @media (min-width: 768px) {

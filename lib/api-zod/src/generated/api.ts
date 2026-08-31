@@ -38,6 +38,7 @@ export const ListPlansResponse = zod.object({
 
 
 /**
+ * Returns the persisted provider connection state for this workspace. Provider access tokens are never included.
  * @summary List channel connection state
  */
 export const ListWorkspaceChannelsParams = zod.object({
@@ -186,6 +187,7 @@ export const DisconnectWorkspaceChannelResponse = zod.void()
 
 
 /**
+ * Returns persisted conversation history and message delivery state for this workspace.
  * @summary List real inbox conversations
  */
 export const ListWorkspaceConversationsParams = zod.object({

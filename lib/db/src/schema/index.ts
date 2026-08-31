@@ -51,6 +51,23 @@ export const sessions = pgTable(
   (table) => [index("sessions_user_idx").on(table.userId)],
 );
 
+export const authTokens = pgTable(
+  "auth_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tokenHash: text("token_hash").notNull().unique(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("auth_tokens_user_idx").on(table.userId),
+    index("auth_tokens_type_idx").on(table.type),
+  ],
+);
+
 export const onboardingStates = pgTable("onboarding_states", {
   workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
   currentStep: integer("current_step").notNull().default(1),
@@ -99,11 +116,22 @@ export const channels = pgTable(
     provider: text("provider").notNull().default(""),
     status: text("status").notNull().default("NOT_CONNECTED"),
     providerData: jsonb("provider_data").notNull().default(sql`'{}'::jsonb`),
+    providerAccountId: text("provider_account_id"),
+    displayName: text("display_name"),
+    accessTokenEncrypted: text("access_token_encrypted"),
+    failureReason: text("failure_reason"),
+    failureCode: text("failure_code"),
+    oauthState: text("oauth_state"),
     connectedAt: timestamp("connected_at", { withTimezone: true }),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("channels_workspace_type_idx").on(table.workspaceId, table.type)],
+  (table) => [
+    uniqueIndex("channels_workspace_type_idx").on(table.workspaceId, table.type),
+    uniqueIndex("channels_type_provider_account_idx").on(table.type, table.providerAccountId),
+    index("channels_oauth_state_idx").on(table.oauthState),
+  ],
 );
 
 export const autoReplyRules = pgTable(
@@ -184,9 +212,32 @@ export const conversations = pgTable("conversations", {
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   channelId: uuid("channel_id").references(() => channels.id, { onDelete: "set null" }),
   contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  providerConversationId: text("provider_conversation_id"),
+  contactName: text("contact_name").notNull().default(""),
+  contactAddress: text("contact_address").notNull().default(""),
   status: text("status").notNull().default("OPEN"),
+  handoff: text("handoff").notNull().default("ASSISTANT"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [index("conversations_workspace_idx").on(table.workspaceId)]);
+}, (table) => [
+  index("conversations_workspace_idx").on(table.workspaceId),
+  uniqueIndex("conversations_workspace_channel_contact_unique").on(table.workspaceId, table.channelId, table.contactAddress),
+]);
+
+export const messages = pgTable("messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  providerMessageId: text("provider_message_id"),
+  from: text("from").notNull(),
+  text: text("text").notNull(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+  deliveryStatus: text("delivery_status"),
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("messages_conversation_idx").on(table.conversationId),
+  uniqueIndex("messages_provider_id_unique").on(table.providerMessageId),
+]);
 
 export const leads = pgTable("leads", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -235,6 +286,8 @@ export type Workspace = typeof workspaces.$inferSelect;
 export type BusinessProfile = typeof businessProfiles.$inferSelect;
 export type Service = typeof services.$inferSelect;
 export type Channel = typeof channels.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;
 export type AutoReplyRule = typeof autoReplyRules.$inferSelect;
 export type FaqItem = typeof faqItems.$inferSelect;
 export type AssistantConfig = typeof assistantConfigs.$inferSelect;

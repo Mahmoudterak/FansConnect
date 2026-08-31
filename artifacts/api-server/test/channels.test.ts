@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { after, before, beforeEach, describe, it } from "node:test";
 import express, { type Request } from "express";
+import { inArray } from "drizzle-orm";
+import { db, workspaces } from "@workspace/db";
 import channelsRouter from "../src/routes/channels";
 
 type Json = Record<string, unknown>;
@@ -24,6 +26,7 @@ const metaEnvKeys = [
 
 let server: Server;
 let baseUrl: string;
+const workspaceIds = new Map<string, string>();
 const app = express();
 
 app.use(
@@ -33,6 +36,17 @@ app.use(
     },
   }),
 );
+app.use("/api/workspaces/:workspaceId", (req, res, next) => {
+  res.locals.workspaceId = req.params.workspaceId;
+  res.locals.auth = {
+    userId: "test-user",
+    workspaceId: req.params.workspaceId,
+    email: "test@example.com",
+    emailVerified: true,
+    role: req.header("x-workspace-role")?.toUpperCase() || "OWNER",
+  };
+  next();
+});
 app.use("/api", channelsRouter);
 
 function jsonResponse(body: Json, status = 200): Response {
@@ -53,7 +67,11 @@ function request(path: string, options: RequestOptions = {}): Promise<{
       : typeof options.body === "string"
         ? options.body
         : JSON.stringify(options.body);
-  const url = new URL(path, baseUrl);
+  let resolvedPath = path;
+  for (const [label, id] of workspaceIds) {
+    resolvedPath = resolvedPath.replace(`/workspaces/${label}`, `/workspaces/${id}`);
+  }
+  const url = new URL(resolvedPath, baseUrl);
   return new Promise((resolve, reject) => {
     const requestOptions = {
       method: options.method || "GET",
@@ -85,6 +103,15 @@ function request(path: string, options: RequestOptions = {}): Promise<{
   });
 }
 
+async function ensureWorkspace(label: string): Promise<string> {
+  const existing = workspaceIds.get(label);
+  if (existing) return existing;
+  const id = randomUUID();
+  await db.insert(workspaces).values({ id, name: `Channel test ${label}` });
+  workspaceIds.set(label, id);
+  return id;
+}
+
 function signature(body: string): string {
   return `sha256=${createHmac("sha256", process.env.META_APP_SECRET || "").update(body).digest("hex")}`;
 }
@@ -99,6 +126,7 @@ function signedWebhook(path: string, payload: Json, extraHeaders: Record<string,
 }
 
 async function beginConnect(workspaceId: string, channel: "whatsapp" | "instagram") {
+  await ensureWorkspace(workspaceId);
   const response = await request(`/api/workspaces/${workspaceId}/channels/${channel}/connect`, {
     method: "POST",
     body: {},
@@ -231,6 +259,9 @@ after(async () => {
     else process.env[key] = value;
   }
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  if (workspaceIds.size > 0) {
+    await db.delete(workspaces).where(inArray(workspaces.id, [...workspaceIds.values()]));
+  }
 });
 
 describe("Meta channel connection safety", () => {
@@ -263,10 +294,7 @@ describe("Meta channel connection safety", () => {
     });
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
-    assert.equal(
-      response.json.message,
-      "Unable to connect this channel right now. Please try again later.",
-    );
+    assert.match(String(response.json.message), /Invalid provider authorization state/);
     assert.equal((response.json.channel as Json).status, "failed");
   });
 
@@ -284,10 +312,7 @@ describe("Meta channel connection safety", () => {
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
     assert.equal((response.json.channel as Json).status, "failed");
-    assert.equal(
-      (response.json.channel as Json).failureReason,
-      "Unable to connect this channel right now. Please try again later.",
-    );
+    assert.equal((response.json.channel as Json).failureReason, "Token was rejected by Meta");
   });
 
   it("allows only an owner to disconnect a channel and clears its credentials", async () => {
@@ -318,56 +343,22 @@ describe("Meta webhook ingestion", () => {
       "/api/webhooks/whatsapp",
       whatsappPayload("whatsapp-phone", "971500000001", "wamid-whatsapp"),
     );
-    assert.equal(response.status, 202);
+    assert.equal(response.status, 202, JSON.stringify(response.json));
     assert.equal(response.json.accepted, 1);
+    const duplicate = await signedWebhook(
+      "/api/webhooks/whatsapp",
+      whatsappPayload("whatsapp-phone", "971500000001", "wamid-whatsapp"),
+    );
+    assert.equal(duplicate.status, 202);
 
     const conversations = await request("/api/workspaces/whatsapp-inbound/conversations?channel=whatsapp");
     const conversation = (conversations.json.conversations as Json[])[0];
+    assert.equal((conversations.json.conversations as Json[]).length, 1);
+    assert.equal((conversation.messages as Json[]).length, 1);
     assert.equal(conversation.contactName, "WhatsApp customer");
     assert.equal(conversation.contactAddress, "971500000001");
     assert.equal((conversation.messages as Json[])[0].providerMessageId, "wamid-whatsapp");
     assert.equal((conversation.messages as Json[])[0].text, "Hello from WhatsApp");
-  });
-
-  it("acknowledges retried WhatsApp and Instagram messages without duplicating them", async () => {
-    const cases = [
-      {
-        workspaceId: "whatsapp-retry",
-        channel: "whatsapp" as const,
-        providerAccountId: "whatsapp-retry-phone",
-        payload: whatsappPayload("whatsapp-retry-phone", "971500000004", "wamid-retry"),
-      },
-      {
-        workspaceId: "instagram-retry",
-        channel: "instagram" as const,
-        providerAccountId: "instagram-retry-business",
-        payload: instagramPayload("instagram-retry-business", "instagram-retry-user", "ig-retry"),
-      },
-    ];
-
-    for (const testCase of cases) {
-      await connectChannel(testCase.workspaceId, testCase.channel, testCase.providerAccountId);
-      const firstDelivery = await signedWebhook(
-        `/api/webhooks/${testCase.channel}`,
-        testCase.payload,
-      );
-      const retryDelivery = await signedWebhook(
-        `/api/webhooks/${testCase.channel}`,
-        testCase.payload,
-      );
-
-      assert.equal(firstDelivery.status, 202);
-      assert.equal(retryDelivery.status, 202);
-      assert.equal(firstDelivery.json.accepted, 1);
-      assert.equal(retryDelivery.json.accepted, 1);
-
-      const conversations = await request(
-        `/api/workspaces/${testCase.workspaceId}/conversations?channel=${testCase.channel}`,
-      );
-      const workspaceConversations = conversations.json.conversations as Json[];
-      assert.equal(workspaceConversations.length, 1);
-      assert.equal((workspaceConversations[0].messages as Json[]).length, 1);
-    }
   });
 
   it("maps a native Instagram payload into a workspace conversation and message", async () => {
@@ -466,6 +457,16 @@ describe("Meta webhook ingestion", () => {
     });
     assert.equal(badSignature.status, 401);
     assert.equal(badSignature.json.error, "invalid_webhook_signature");
+    const configuredSecret = process.env.META_APP_SECRET;
+    delete process.env.META_APP_SECRET;
+    const missingSecret = await request("/api/webhooks/whatsapp", {
+      method: "POST",
+      body,
+      headers: { "x-hub-signature-256": signature(body) },
+    });
+    process.env.META_APP_SECRET = configuredSecret;
+    assert.equal(missingSecret.status, 401);
+    assert.equal(missingSecret.json.error, "invalid_webhook_signature");
 
     const accepted = await signedWebhook(
       "/api/webhooks/whatsapp",

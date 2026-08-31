@@ -1,0 +1,770 @@
+# FANSCONNECT — FIX REAL WORKSPACE API + ARABIC + REMOVE REMAINING DEMO STATE
+
+The latest Preview shows the FansConnect branding correctly, but the
+application is NOT operational yet.
+
+The Channels page currently displays:
+
+"Workspace service unavailable."
+
+The UI also still has English-only content and appears to contain
+possible demo/default state.
+
+DO NOT hide these problems with mock data.
+
+Fix the underlying implementation.
+
+============================================================
+1. WORKSPACE API — CRITICAL
+============================================================
+
+The Preview currently shows:
+
+Workspace service unavailable.
+
+Find the exact API request that fails.
+
+Inspect:
+
+Browser Network
+Frontend API client
+Backend route
+Authentication middleware
+Workspace membership lookup
+Tenant resolution
+Database query
+CORS
+API base URL
+Environment configuration
+
+Determine the actual root cause.
+
+Do NOT simply change the error message.
+
+Do NOT add mock data.
+
+Do NOT create a fallback workspace.
+
+Do NOT hard-code a tenant.
+
+============================================================
+2. AUTHENTICATION
+============================================================
+
+The authenticated user must be resolved from the real login/session.
+
+Flow:
+
+Login
+→ authenticated identity
+→ user
+→ membership
+→ tenant/workspace
+→ workspace data
+
+Never:
+
+frontend tenantId
+→ trust tenantId
+
+Never use:
+
+demo tenant
+sample tenant
+hard-coded tenant
+fake user
+
+If authentication is missing:
+
+401
+
+If membership is invalid:
+
+403
+
+============================================================
+3. WORKSPACE ENDPOINT
+============================================================
+
+Verify the actual workspace endpoint used by:
+
+Channels
+Dashboard
+Business Profile
+AI Assistant
+FAQ
+Auto Replies
+Training
+Contacts
+Inbox
+
+Every endpoint must resolve the current tenant from the authenticated
+user.
+
+Do not make each frontend page invent its own tenant resolution.
+
+Use a centralized authenticated workspace context where appropriate.
+
+============================================================
+4. CHANNELS PAGE
+============================================================
+
+The Channels page must load real channel configuration.
+
+Initial state for a new customer:
+
+WhatsApp:
+NOT_CONNECTED
+
+Instagram:
+NOT_CONNECTED
+
+Do NOT display:
+
+Connected
+Excellent
+Live
+Messages this month
+Connected since
+
+unless the backend has real verified data.
+
+If the channel is not configured:
+
+show:
+
+"غير متصل"
+
+and:
+
+"ربط WhatsApp Business"
+
+If the API itself is unavailable:
+
+show a real translated error state and Retry button.
+
+Do NOT display fake channel data.
+
+============================================================
+5. NEW WORKSPACE
+============================================================
+
+Create a NEW test account.
+
+After registration:
+
+Workspace must be real and empty.
+
+Expected:
+
+Contacts: 0
+Conversations: 0
+Messages: 0
+Leads: 0
+Appointments: 0
+Orders: 0
+FAQ: 0
+Auto Replies: 0
+Training Examples: 0
+
+WhatsApp:
+NOT_CONNECTED
+
+Instagram:
+NOT_CONNECTED
+
+AI:
+PAUSED
+
+============================================================
+6. REMOVE FAKE INBOX COUNT
+============================================================
+
+The screenshot shows:
+
+Inbox 3
+
+This must NOT be hard-coded.
+
+The badge must come from actual unread conversation count.
+
+For a new workspace:
+
+Inbox badge = 0
+
+If there are no conversations, do not display a badge.
+
+============================================================
+7. REMOVE DEMO USER DISPLAY
+============================================================
+
+The bottom-left account section currently displays:
+
+Workspace owner
+Admin account
+
+Make this dynamic.
+
+Display the actual authenticated user's:
+
+name
+email or appropriate account information
+role
+
+Do not use:
+
+Basma
+Admin account
+Demo User
+sample user
+
+unless it is the real account.
+
+============================================================
+8. WORKSPACE NAME
+============================================================
+
+The sidebar currently displays:
+
+Your workspace
+
+This can only be used as an empty-state placeholder.
+
+Once the customer creates the business profile, display:
+
+REAL BUSINESS NAME
+
+from the database.
+
+Example:
+
+If customer enters:
+
+"The Garden Plus Medical Center"
+
+then display exactly that business/workspace name.
+
+Do not automatically create:
+
+Bayt Noor Studio
+Your workspace
+SahaAI
+
+as production business data.
+
+============================================================
+9. ARABIC LANGUAGE — CRITICAL
+============================================================
+
+The screenshot still shows English UI.
+
+The language selector:
+
+العربية
+
+must actually work.
+
+When clicked:
+
+Immediately change:
+
+document.documentElement.lang = "ar"
+document.documentElement.dir = "rtl"
+
+The complete application must switch to Arabic.
+
+Not only the selected button.
+
+============================================================
+10. ARABIC SIDEBAR
+============================================================
+
+Arabic sidebar must move to the RIGHT.
+
+English sidebar must remain on the LEFT.
+
+Arabic navigation:
+
+مساحة العمل
+
+نظرة عامة
+صندوق الوارد
+جهات الاتصال
+العملاء المحتملون
+المواعيد
+
+الأتمتة
+
+المساعد الذكي
+الأسئلة الشائعة والردود التلقائية
+التدريب
+التدفقات
+التحليلات
+الحملات
+
+إعدادات مساحة العمل
+
+ملف النشاط
+القنوات
+الباقة والفوترة
+
+All labels must come from i18n.
+
+============================================================
+11. ARABIC CHANNELS PAGE
+============================================================
+
+Arabic version:
+
+القنوات
+
+اربط WhatsApp Business وInstagram بعد التحقق الفعلي من بيانات
+مزود الخدمة.
+
+WhatsApp Business
+
+غير متصل
+
+ربط WhatsApp Business
+
+Instagram
+
+غير متصل
+
+ربط Instagram
+
+If provider integration is not configured:
+
+لا تعرض Connected.
+
+============================================================
+12. COMPLETE I18N
+============================================================
+
+Search the entire frontend for hard-coded English.
+
+Especially:
+
+Channels
+Dashboard
+Inbox
+Contacts
+Leads
+Appointments
+AI Assistant
+FAQ
+Auto Replies
+Training
+Flows
+Analytics
+Campaigns
+Business Profile
+Billing
+Settings
+Authentication
+Onboarding
+
+Everything visible to customers must use translation keys.
+
+============================================================
+13. RTL CSS
+============================================================
+
+When Arabic is selected:
+
+sidebar:
+RIGHT
+
+main content:
+correct RTL alignment
+
+forms:
+RTL
+
+tables:
+RTL where appropriate
+
+buttons:
+RTL
+
+breadcrumbs:
+RTL
+
+dropdowns:
+RTL
+
+dialogs:
+RTL
+
+Use logical CSS properties where appropriate.
+
+Do not solve the entire system with arbitrary left/right overrides.
+
+============================================================
+14. LANGUAGE PERSISTENCE
+============================================================
+
+Selected language must survive:
+
+refresh
+navigation
+logout/login
+browser restart
+
+Default:
+
+Arabic
+
+unless an existing user preference says otherwise.
+
+============================================================
+15. API ERROR HANDLING
+============================================================
+
+Do not replace failed API calls with mock arrays.
+
+Correct behavior:
+
+401:
+redirect to login
+
+403:
+access denied
+
+404:
+not found
+
+500:
+translated server error
+
+Network failure:
+"تعذر الاتصال بالخادم."
+
+with:
+
+"إعادة المحاولة"
+
+============================================================
+16. NO SILENT MOCK FALLBACK
+============================================================
+
+Search the project for:
+
+mock
+demo
+fake
+sample
+fallback
+seed
+placeholder
+
+Inspect every production page.
+
+A failed API request must NEVER cause the UI to show fake data.
+
+============================================================
+17. DASHBOARD
+============================================================
+
+All dashboard metrics must come from the API.
+
+New workspace:
+
+0 conversations
+0 leads
+0 appointments
+0 orders
+
+No hard-coded:
+
+128
+23
+12
+1248
+
+============================================================
+18. CHANNEL CONNECTION
+============================================================
+
+A channel is:
+
+NOT_CONNECTED
+
+until provider verification succeeds.
+
+WhatsApp:
+
+NOT_CONNECTED
+→ CONNECTING
+→ CONNECTED
+
+or:
+
+ERROR
+
+Instagram:
+
+NOT_CONNECTED
+→ CONNECTING
+→ CONNECTED
+
+or:
+
+ERROR
+
+Persist state appropriately.
+
+Do not use process memory as the only source of truth.
+
+============================================================
+19. TEST REAL ACCOUNT
+============================================================
+
+Create a completely new customer account.
+
+Test:
+
+Register
+→ Login
+→ Onboarding
+→ Create Business Profile
+→ Save
+→ Refresh
+→ Verify persistence
+→ Open Channels
+→ Verify no fake connection
+→ Open Dashboard
+→ Verify zero metrics
+→ Open Inbox
+→ Verify empty state
+→ Switch Arabic
+→ Verify full RTL
+→ Refresh
+→ Verify Arabic remains
+
+============================================================
+20. API TEST
+============================================================
+
+Directly test the authenticated Workspace API.
+
+Verify:
+
+authenticated request:
+200
+
+unauthenticated request:
+401
+
+wrong tenant:
+403 or 404
+
+Do not weaken authentication to make Preview work.
+
+============================================================
+21. DATABASE
+============================================================
+
+Do not modify PostgreSQL unnecessarily.
+
+Do not delete existing migrations.
+
+Do not reset production data.
+
+Do not run:
+
+prisma migrate reset
+
+Do not delete volumes.
+
+Only fix the minimum required database/query issue if the root cause
+is actually database-related.
+
+============================================================
+22. PRESERVE EXISTING ARCHITECTURE
+============================================================
+
+Keep:
+
+Express
+Prisma
+PostgreSQL
+React
+Vite
+React Router
+Conversation Engine
+Tenant Isolation
+WhatsApp Provider abstraction
+Sends Bot
+AI
+FAQ
+Auto Replies
+Flows
+CRM
+Billing
+
+Do not rebuild the project.
+
+============================================================
+23. BUILD
+============================================================
+
+Run:
+
+npm test
+npm run build
+
+Fix real errors.
+
+Do not suppress errors.
+
+============================================================
+24. PREVIEW
+============================================================
+
+Launch the actual Preview.
+
+Open:
+
+/register
+/onboarding
+/app
+/app/channels
+/app/inbox
+/app/ai-assistant
+/app/faq
+/app/training
+/app/business-profile
+/app/billing
+
+Test Arabic and English.
+
+============================================================
+25. FINAL ACCEPTANCE
+============================================================
+
+The following must all PASS:
+
+Workspace API:
+PASS
+
+Authentication:
+PASS
+
+Membership:
+PASS
+
+Tenant isolation:
+PASS
+
+Real empty workspace:
+PASS
+
+Channels API:
+PASS
+
+No fake channel state:
+PASS
+
+No fake inbox count:
+PASS
+
+No fake dashboard metrics:
+PASS
+
+Business profile persistence:
+PASS
+
+Arabic:
+PASS
+
+RTL:
+PASS
+
+English:
+PASS
+
+LTR:
+PASS
+
+Language persistence:
+PASS
+
+Mobile:
+PASS
+
+Build:
+PASS
+
+Tests:
+PASS
+
+Preview:
+PASS
+
+============================================================
+FINAL REPORT
+============================================================
+
+Provide:
+
+ROOT CAUSE:
+[actual reason for Workspace service unavailable]
+
+WORKSPACE API:
+PASS / FAIL
+
+AUTH:
+PASS / FAIL
+
+TENANT ISOLATION:
+PASS / FAIL
+
+CHANNELS:
+PASS / FAIL
+
+NO DEMO DATA:
+PASS / FAIL
+
+INBOX:
+PASS / FAIL
+
+DASHBOARD:
+PASS / FAIL
+
+ARABIC:
+PASS / FAIL
+
+RTL:
+PASS / FAIL
+
+ENGLISH:
+PASS / FAIL
+
+LTR:
+PASS / FAIL
+
+PERSISTENCE:
+PASS / FAIL
+
+BUILD:
+PASS / FAIL
+
+TESTS:
+PASS / FAIL
+
+PREVIEW:
+PASS / FAIL
+
+REMAINING BLOCKERS:
+[exact list]
+
+IMPORTANT:
+
+Do not report "PASS" simply because the source code looks correct.
+
+Actually run the application and test the rendered Preview.
+
+Do not use mock data to make the screenshot look correct.
+
+The goal is a REAL FansConnect SaaS application.

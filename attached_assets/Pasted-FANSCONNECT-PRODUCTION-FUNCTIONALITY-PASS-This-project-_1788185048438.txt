@@ -1,0 +1,1012 @@
+FANSCONNECT — PRODUCTION FUNCTIONALITY PASS
+
+This project must now be treated as a REAL SaaS PRODUCT.
+
+Do NOT build demo screens.
+Do NOT use fake data.
+Do NOT create visual-only buttons.
+Do NOT simulate successful operations.
+
+Every visible feature must perform a real backend operation and persist
+its state in PostgreSQL.
+
+============================================================
+1. CORE PRINCIPLE
+============================================================
+
+FansConnect is a multi-tenant SaaS platform.
+
+The customer should be able to:
+
+Register
+→ create workspace
+→ complete business profile
+→ add services
+→ connect WhatsApp
+→ configure FAQ
+→ configure automatic replies
+→ configure AI assistant
+→ add conversation examples
+→ activate assistant
+→ receive real WhatsApp messages
+→ automatically answer customers
+→ see conversations in Inbox
+→ manage contacts/leads
+→ manage billing
+
+Everything must be real.
+
+No demo tenant.
+No demo customer.
+No fake conversations.
+No fake metrics.
+No fake channel connection.
+No fake billing status.
+No hard-coded success states.
+
+============================================================
+2. DATABASE = SOURCE OF TRUTH
+============================================================
+
+All customer configuration must be persisted in PostgreSQL.
+
+Never use React state or process memory as the primary source of truth.
+
+Persist:
+
+Workspace
+Business Profile
+Services
+Channels
+FAQ
+Auto Replies
+AI Configuration
+Training Examples
+Flows
+Contacts
+Conversations
+Messages
+Leads
+Appointments
+Billing
+Subscriptions
+Usage
+Audit Logs
+
+All records must be tenant-scoped.
+
+============================================================
+3. FAQ LIBRARY — MUST BE FULLY FUNCTIONAL
+============================================================
+
+The screen:
+
+"FAQ & auto-replies"
+
+must contain a REAL FAQ Library.
+
+This is NOT a static information page.
+
+Customer must be able to:
+
++ إضافة سؤال شائع
+
+For every FAQ:
+
+Question
+Answer
+Category
+Priority
+Enabled / Disabled
+
+Actions:
+
+Edit
+Delete
+Enable
+Disable
+
+============================================================
+4. FAQ API
+============================================================
+
+Implement and verify:
+
+GET /api/bot-config/me/faqs
+
+POST /api/bot-config/me/faqs
+
+PATCH /api/bot-config/me/faqs/:id
+
+DELETE /api/bot-config/me/faqs/:id
+
+Every request must use the authenticated user's tenant.
+
+Never accept tenantId from the browser as authorization.
+
+============================================================
+5. FAQ CREATION UI
+============================================================
+
+Create a proper modal/drawer/form.
+
+Arabic fields:
+
+السؤال
+الإجابة
+التصنيف
+الأولوية
+تفعيل الإجابة
+
+Buttons:
+
+حفظ السؤال
+إلغاء
+
+Validation:
+
+السؤال مطلوب.
+الإجابة مطلوبة.
+
+After saving:
+
+Immediately refresh the actual FAQ list.
+
+Do not add fake rows.
+
+============================================================
+6. FAQ EDIT
+============================================================
+
+Click:
+
+تعديل
+
+Load the actual FAQ record.
+
+Allow editing.
+
+Save to PostgreSQL.
+
+Refresh the list from API.
+
+============================================================
+7. FAQ DELETE
+============================================================
+
+Click:
+
+حذف
+
+Show confirmation:
+
+"هل أنت متأكد من حذف هذا السؤال؟"
+
+After confirmation:
+
+DELETE actual database record.
+
+Refresh list.
+
+No fake deletion.
+
+============================================================
+8. FAQ ENABLE/DISABLE
+============================================================
+
+Enabled FAQ:
+
+is available to Conversation Engine.
+
+Disabled FAQ:
+
+must NOT be used for automatic answers.
+
+Persist enabled state.
+
+============================================================
+9. FAQ MUST ACTUALLY CONTROL THE BOT
+============================================================
+
+This is critical.
+
+When a real WhatsApp message arrives:
+
+Incoming WhatsApp Message
+↓
+Tenant Resolution
+↓
+Duplicate Check
+↓
+Contact
+↓
+FAQ Matching
+↓
+Auto Reply Matching
+↓
+Active Flow
+↓
+AI fallback
+↓
+Message Logging
+↓
+Provider Response
+
+FAQ must be queried from PostgreSQL.
+
+Do NOT use hard-coded FAQ examples.
+
+============================================================
+10. FAQ MATCHING
+============================================================
+
+Implement reliable matching.
+
+Normalize:
+
+Arabic
+English
+case
+spacing
+punctuation
+
+The system should identify semantically/effectively matching questions
+according to the configured FAQ behavior.
+
+Only enabled FAQs participate.
+
+Priority must be respected.
+
+If a high-priority FAQ matches:
+
+return its configured answer.
+
+Do not call AI unnecessarily.
+
+============================================================
+11. AUTO REPLIES
+============================================================
+
+Auto Replies must also be fully functional.
+
+Customer can:
+
+Add
+Edit
+Delete
+Enable
+Disable
+
+Fields:
+
+اسم القاعدة
+الكلمات المفتاحية
+نوع المطابقة
+الرد
+الأولوية
+الحالة
+
+Match types:
+
+exact
+contains
+startsWith
+regex
+multiple_keywords
+
+API:
+
+GET
+POST
+PATCH
+DELETE
+
+must all persist to PostgreSQL.
+
+============================================================
+12. TRAINING / CONVERSATION EXAMPLES
+============================================================
+
+Training screen must not be a visual-only page.
+
+The customer must be able to create:
+
+رسالة العميل
+رد النشاط
+ملاحظة للبوت
+
+Optional image.
+
+Maximum:
+
+20 examples per workspace.
+
+Every example is tenant-scoped.
+
+Allow:
+
+Add
+Edit
+Delete
+
+The Conversation Engine must be able to use these examples as AI
+context when generating fallback answers.
+
+============================================================
+13. AI ASSISTANT
+============================================================
+
+AI configuration must be real and persisted.
+
+Settings:
+
+Personality:
+
+ودود ومحترف
+رسمي ومختصر
+مرح وعفوي
+احترافي وتقني
+متعاطف وداعم
+
+Response style:
+
+مختصر
+متوسط
+مفصل
+
+Language:
+
+العربية
+English
+
+Arabic dialect:
+
+العربية الفصحى الحديثة
+اللهجة السعودية
+اللهجة الخليجية
+اللهجة المصرية
+اللهجة الشامية
+اللهجة المغربية
+
+Fields:
+
+Welcome Message
+Out-of-Scope Message
+Human Handoff Message
+AI Failure Message
+Business Rules
+
+Save everything.
+
+============================================================
+14. AI ACTIVATION
+============================================================
+
+AI cannot be activated until:
+
+1. Business profile exists.
+2. At least one service exists.
+3. WhatsApp is actually connected and verified.
+4. AI configuration is valid.
+
+This must be enforced by backend AND frontend.
+
+If WhatsApp is not connected:
+
+"اربط WhatsApp أولاً لتفعيل المساعد."
+
+Do not fake activation.
+
+============================================================
+15. WHATSAPP
+============================================================
+
+WhatsApp must use a real provider abstraction.
+
+Supported:
+
+WhatsApp Cloud API
+Sends Bot
+
+Connection state must be persisted.
+
+Possible states:
+
+NOT_CONNECTED
+CONNECTING
+CONNECTED
+ERROR
+PAUSED
+
+CONNECTED is allowed ONLY after successful provider verification.
+
+Never display fake:
+
+phone number
+connected date
+message count
+health
+
+============================================================
+16. CONVERSATION ENGINE
+============================================================
+
+Implement the actual engine:
+
+Incoming Message
+↓
+Resolve Tenant
+↓
+Verify Webhook Event Idempotency
+↓
+Find/Create Contact
+↓
+Find Conversation
+↓
+FAQ
+↓
+Auto Reply
+↓
+Active Flow
+↓
+AI
+↓
+Human Handoff
+↓
+Create Outgoing Message
+↓
+Send through Provider
+↓
+Persist provider response
+
+Every incoming and outgoing message must be stored.
+
+============================================================
+17. INBOX
+============================================================
+
+Inbox must display real database conversations.
+
+Customer can:
+
+Open conversation
+Send reply
+Pause AI
+Resume AI
+Assign agent
+Close conversation
+Trigger handoff
+
+No sample conversations.
+
+Unread count comes from actual database.
+
+For a new workspace:
+
+0
+
+Do not display a fake badge such as:
+
+3
+
+============================================================
+18. CONTACTS / CRM
+============================================================
+
+Contacts must come from actual messages or actual customer creation.
+
+Fields:
+
+Name
+Phone
+Email
+Source
+Status
+Tags
+Notes
+
+Tenant scoped.
+
+============================================================
+19. BILLING — CRITICAL
+============================================================
+
+The customer must NEVER see internal payment integration setup.
+
+The screenshot currently shows:
+
+"قم بتوصيل زينة"
+
+This is WRONG for the customer-facing billing page.
+
+REMOVE IT.
+
+Ziina configuration is an INTERNAL ADMIN/SERVER configuration.
+
+Customers must see only:
+
+Current Plan
+Price
+Billing cycle
+Usage
+Upgrade
+Downgrade
+Payment status
+Invoices
+Payment method if applicable
+
+Never expose:
+
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+internal webhook configuration
+provider setup instructions
+environment variables
+server credentials
+
+============================================================
+20. BILLING CUSTOMER EXPERIENCE
+============================================================
+
+Customer-facing page in Arabic:
+
+الباقة والفوترة
+
+الباقة الحالية
+
+السعر
+
+شهرياً
+
+الاستخدام
+
+الفواتير
+
+طريقة الدفع
+
+[ترقية الباقة]
+
+[تغيير الباقة]
+
+[عرض الفواتير]
+
+If no payment method exists:
+
+"لم تتم إضافة وسيلة دفع بعد."
+
+Then:
+
+"إضافة وسيلة دفع"
+
+The actual payment integration happens through the backend.
+
+============================================================
+21. ZIINA
+============================================================
+
+Ziina credentials belong ONLY to server environment variables:
+
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+
+Never expose them to:
+
+React
+API responses
+browser
+customer settings
+
+The customer should initiate checkout.
+
+Backend:
+
+create checkout
+→ return safe checkout URL/session
+→ customer completes payment
+→ webhook verifies payment
+→ subscription updates
+→ invoice recorded
+
+Do NOT mark a plan as paid until payment verification succeeds.
+
+============================================================
+22. PLAN DATA
+============================================================
+
+Plans must be stored/configurable.
+
+Use AED.
+
+All customer-facing prices must display:
+
+درهم إماراتي
+AED
+
+Example:
+
+149 درهم / شهرياً
+349 درهم / شهرياً
+699 درهم / شهرياً
+
+Do not display SAR.
+
+Do not display ريال.
+
+Do not display USD.
+
+============================================================
+23. BILLING SECURITY
+============================================================
+
+Customer A must never access:
+
+Customer B invoices
+Customer B subscription
+Customer B payment records
+
+All billing queries must use authenticated tenant membership.
+
+============================================================
+24. EMPTY STATES
+============================================================
+
+For new customers:
+
+FAQ:
+
+"لا توجد أسئلة شائعة بعد."
+
+[إضافة سؤال شائع]
+
+Auto Replies:
+
+"لا توجد قواعد رد تلقائي بعد."
+
+[إضافة قاعدة]
+
+Training:
+
+"لا توجد أمثلة تدريبية بعد."
+
+[إضافة مثال]
+
+Inbox:
+
+"لا توجد محادثات بعد."
+
+Channels:
+
+WhatsApp:
+غير متصل
+
+Instagram:
+غير متصل
+
+Dashboard:
+
+0 conversations
+0 leads
+0 appointments
+
+============================================================
+25. REMOVE ALL DEMO DATA
+============================================================
+
+Search the entire project for:
+
+Bayt Noor Studio
+Basma
+Amina
+Marian
+Omar
+Palm House
+sample
+demo
+mock
+fake
+1248
+128
+23
+12
+
+Remove production fallbacks.
+
+Seed files may remain ONLY for development/test environment.
+
+Production must never load demo records automatically.
+
+============================================================
+26. API FAILURES
+============================================================
+
+If API fails:
+
+DO NOT show fake data.
+
+Show:
+
+"تعذر تحميل البيانات."
+
+[إعادة المحاولة]
+
+============================================================
+27. ARABIC
+============================================================
+
+Arabic must be a real application language.
+
+All pages must support:
+
+Arabic RTL
+English LTR
+
+This includes:
+
+FAQ
+Auto Replies
+Training
+Billing
+Channels
+Inbox
+Contacts
+Analytics
+Settings
+Onboarding
+Login
+Registration
+
+============================================================
+28. FAQ PAGE ARABIC UI
+============================================================
+
+Use:
+
+الأسئلة الشائعة والردود التلقائية
+
+مكتبة الأسئلة الشائعة
+
+أضف إجابات معتمدة للأسئلة المتكررة لعملائك.
+
+[+ إضافة سؤال]
+
+Columns:
+
+السؤال
+الإجابة
+التصنيف
+الأولوية
+الحالة
+الإجراءات
+
+Actions:
+
+تعديل
+حذف
+تفعيل
+تعطيل
+
+============================================================
+29. DATABASE TEST
+============================================================
+
+Create a real FAQ.
+
+Example:
+
+Question:
+ما هي أسعار الخدمات؟
+
+Answer:
+يمكنك الاطلاع على أسعار خدماتنا من خلال التواصل معنا.
+
+Save.
+
+Refresh.
+
+It must remain.
+
+Disable it.
+
+Send matching test message.
+
+It must NOT answer using that FAQ.
+
+Enable it.
+
+Send matching test message.
+
+It MUST use that FAQ answer.
+
+Then delete it.
+
+Confirm it is gone from PostgreSQL.
+
+============================================================
+30. BILLING TEST
+============================================================
+
+Open Billing as normal customer.
+
+Confirm:
+
+NO "Connect Ziina"
+
+NO API keys
+
+NO webhook secrets
+
+NO internal configuration
+
+Only customer billing experience.
+
+============================================================
+31. SECURITY TEST
+============================================================
+
+Test:
+
+User A
+User B
+
+A cannot read:
+
+B FAQs
+B Auto Replies
+B Training
+B Contacts
+B Conversations
+B Billing
+
+============================================================
+32. BUILD AND TEST
+============================================================
+
+Run:
+
+npm test
+npm run build
+
+Then launch Preview.
+
+Actually click and test:
+
+FAQ
+Add
+Edit
+Disable
+Enable
+Delete
+
+Auto Reply
+Add
+Edit
+Delete
+
+Training
+Add
+Edit
+Delete
+
+Billing
+Open
+Select plan
+Verify customer experience
+
+============================================================
+33. NO VISUAL-ONLY IMPLEMENTATION
+============================================================
+
+Every button must either:
+
+perform a real operation
+OR
+be clearly disabled with an explanation.
+
+Do NOT create buttons that only change local UI.
+
+============================================================
+34. FINAL ACCEPTANCE
+============================================================
+
+The project is NOT complete until:
+
+Authentication:
+PASS
+
+Tenant Isolation:
+PASS
+
+Real Database:
+PASS
+
+FAQ CRUD:
+PASS
+
+FAQ Engine Integration:
+PASS
+
+Auto Reply CRUD:
+PASS
+
+Training CRUD:
+PASS
+
+AI Configuration:
+PASS
+
+AI Activation Gate:
+PASS
+
+WhatsApp:
+PASS
+
+Inbox:
+PASS
+
+Contacts:
+PASS
+
+CRM:
+PASS
+
+Billing:
+PASS
+
+Ziina hidden from customer:
+PASS
+
+AED:
+PASS
+
+Arabic:
+PASS
+
+RTL:
+PASS
+
+No Demo Data:
+PASS
+
+Persistence:
+PASS
+
+API:
+PASS
+
+Build:
+PASS
+
+Tests:
+PASS
+
+Preview:
+PASS
+
+============================================================
+FINAL REPORT
+============================================================
+
+Return the exact root causes and exact tests performed.
+
+Do NOT say:
+
+"implemented"
+
+unless the feature was actually tested end-to-end.
+
+For every feature report:
+
+Backend:
+PASS / FAIL
+
+Database:
+PASS / FAIL
+
+Frontend:
+PASS / FAIL
+
+End-to-end:
+PASS / FAIL
+
+Remaining blockers:
+[exact list]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -22,7 +22,7 @@ type Conversation = { id: number; contactName: string; avatar: string; channel: 
 type LiveChannel = {
   channel: 'whatsapp' | 'instagram';
   name: string;
-  status: 'connecting' | 'connected' | 'degraded' | 'failed' | 'disconnected';
+  status: 'setup_required' | 'connecting' | 'connected' | 'degraded' | 'failed' | 'disconnected';
   verified: boolean;
   displayName: string | null;
   lastVerifiedAt: string | null;
@@ -40,43 +40,164 @@ type LiveConversation = {
   messages: { id: string; from: 'customer' | 'team' | 'assistant'; text: string; timestamp: string; deliveryStatus?: string }[];
 };
 
+type WorkspaceContextData = {
+  workspace: { id: string; name: string };
+  user: { id: string; email: string; emailVerified: boolean; role: string };
+  profile: { businessName: string; activityType: string; country: string } | null;
+  assistant: { status: string } | null;
+  counts: { contacts: number; conversations: number; messages: number; leads: number; appointments: number; orders: number; faq: number; autoReplies: number; trainingExamples: number; unreadConversations: number };
+};
+type AuthState = {
+  loading: boolean;
+  authenticated: boolean;
+  onboardingCompleted: boolean;
+  workspace: WorkspaceContextData | null;
+  refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
+};
+type Language = 'en' | 'ar';
+
+const ar: Record<string, string> = {
+  'Workspace': 'مساحة العمل',
+  'Overview': 'نظرة عامة',
+  'Inbox': 'صندوق الوارد',
+  'Contacts': 'جهات الاتصال',
+  'Leads': 'العملاء المحتملون',
+  'Appointments': 'المواعيد',
+  'Automation': 'الأتمتة',
+  'AI assistant': 'المساعد الذكي',
+  'FAQ & auto-replies': 'الأسئلة الشائعة والردود التلقائية',
+  'Training': 'التدريب',
+  'Flows': 'التدفقات',
+  'Analytics': 'التحليلات',
+  'Campaigns': 'الحملات',
+  'Workspace settings': 'إعدادات مساحة العمل',
+  'Business profile': 'ملف النشاط',
+  'Channels': 'القنوات',
+  'Catalog': 'الكتالوج',
+  'Orders': 'الطلبات',
+  'Plan & billing': 'الباقة والفوترة',
+  'Home': 'الرئيسية',
+  'Settings': 'الإعدادات',
+  'Search workspace': 'البحث في مساحة العمل',
+  'Workspace owner': 'مالك مساحة العمل',
+  'Sign out': 'تسجيل الخروج',
+  'Checking channels…': 'جارٍ التحقق من القنوات…',
+  'Channel action needed': 'القنوات تحتاج إلى إجراء',
+  'Channels verified': 'تم التحقق من القنوات',
+  'Channel setup required': 'يلزم إعداد القنوات',
+  'Channel status unavailable': 'حالة القنوات غير متاحة',
+  'Shared inbox': 'صندوق الوارد المشترك',
+  'Your inbox is loading.': 'جارٍ تحميل صندوق الوارد.',
+  'Stay close to every conversation.': 'تابع كل محادثة عن قرب.',
+  'No conversations yet': 'لا توجد محادثات بعد',
+  'Connect and verify WhatsApp Business or Instagram to start receiving real customer messages. This inbox does not contain demo conversations.': 'اربط WhatsApp Business أو Instagram وتحقق منه لبدء استقبال رسائل العملاء الحقيقية. لا يحتوي صندوق الوارد على محادثات تجريبية.',
+  'Connect a channel': 'ربط قناة',
+  'Manage channels': 'إدارة القنوات',
+  'Search conversations': 'البحث في المحادثات',
+  'All': 'الكل',
+  'Open': 'مفتوحة',
+  'Hand off to team': 'تحويل إلى الفريق',
+  'Write a reply in English or العربية...': 'اكتب ردًا بالعربية أو الإنجليزية...',
+  'Messages are sent only after the provider accepts them.': 'لا يتم إرسال الرسائل إلا بعد قبول مزود الخدمة لها.',
+  'Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.': 'اربط WhatsApp Business وInstagram بعد التحقق الفعلي من بيانات مزود الخدمة.',
+  'Checking provider state…': 'جارٍ التحقق من حالة مزود الخدمة…',
+  'Connected': 'متصل',
+  'Authorization in progress': 'جارٍ التفويض',
+  'Verification failed': 'فشل التحقق',
+  'Disconnected': 'غير متصل',
+  'Setup required': 'غير متصل',
+  'Verified': 'تم التحقق',
+  'Connecting': 'جارٍ الربط',
+  'Action needed': 'يلزم إجراء',
+  'Not ready': 'غير متصل',
+  'Disconnect': 'قطع الاتصال',
+  'Checking…': 'جارٍ التحقق…',
+  'Try again': 'إعادة المحاولة',
+  'Connect': 'ربط',
+  'Retry': 'إعادة المحاولة',
+  'Could not connect to the server.': 'تعذر الاتصال بالخادم.',
+  'Workspace overview': 'نظرة عامة على مساحة العمل',
+  'Good morning.': 'مرحبًا.',
+  'Open daily brief': 'فتح الملخص اليومي',
+  'Conversations': 'المحادثات',
+  'New leads': 'العملاء المحتملون الجدد',
+  'Appointments booked': 'المواعيد المحجوزة',
+  'Connect a channel to begin': 'اربط قناة للبدء',
+  'Your next conversations': 'محادثاتك التالية',
+  'Your shared inbox is waiting for a channel': 'صندوق الوارد المشترك بانتظار ربط قناة',
+  'Assistant health': 'حالة المساعد',
+  'Ready to be trained.': 'جاهز للتدريب.',
+  'PAUSED': 'متوقف مؤقتًا',
+  'No items yet': 'لا توجد عناصر بعد',
+  'Real workspace data will appear here after you add it.': 'ستظهر بيانات مساحة العمل الحقيقية هنا بعد إضافتها.',
+  'Save changes': 'حفظ التغييرات',
+  'Saved': 'تم الحفظ',
+  'Business name': 'اسم النشاط',
+  'Industry': 'نوع النشاط',
+  'Country': 'الدولة',
+  'Your profile is up to date.': 'تم تحديث ملف النشاط.',
+  'Workspace setup': 'إعداد مساحة العمل',
+  'Tell us about your business.': 'أخبرنا عن نشاطك.',
+  'Choose your channels.': 'اختر قنواتك.',
+  'Your workspace is ready.': 'مساحة عملك جاهزة.',
+  'Step': 'الخطوة',
+  'of': 'من',
+  'Continue': 'متابعة',
+  'Open workspace': 'فتح مساحة العمل',
+  'Connect later from Channels': 'يمكنك الربط لاحقًا من صفحة القنوات',
+  'Your workspace has been created. Connect a channel when you are ready to start receiving conversations.': 'تم إنشاء مساحة العمل. اربط قناة عندما تكون جاهزًا لاستقبال المحادثات.',
+  'Welcome back': 'مرحبًا بعودتك',
+  'Start your workspace': 'ابدأ مساحة عملك',
+  'Good to see you again.': 'سعداء برؤيتك مجددًا.',
+  'A better inbox starts here.': 'صندوق وارد أفضل يبدأ هنا.',
+  'Work email': 'البريد الإلكتروني للعمل',
+  'Password': 'كلمة المرور',
+  'Forgot password?': 'هل نسيت كلمة المرور؟',
+  'Sign in to FansConnect': 'تسجيل الدخول إلى FansConnect',
+  'Create workspace': 'إنشاء مساحة العمل',
+  'Business name (optional)': 'اسم النشاط (اختياري)',
+  'New to FansConnect?': 'جديد في FansConnect؟',
+  'Already have a workspace?': 'لديك مساحة عمل بالفعل؟',
+  'Create an account': 'إنشاء حساب',
+  'Sign in': 'تسجيل الدخول',
+  'Reset your password': 'إعادة تعيين كلمة المرور',
+  'Send reset link': 'إرسال رابط إعادة التعيين',
+  'New password': 'كلمة المرور الجديدة',
+  'Reset password': 'إعادة تعيين كلمة المرور',
+  'Verify your email': 'تحقق من بريدك الإلكتروني',
+  'Verify email': 'تأكيد البريد الإلكتروني',
+  'Email verified': 'تم تأكيد البريد الإلكتروني',
+  'Access denied': 'تم رفض الوصول',
+  'Your session has expired. Please sign in again.': 'انتهت صلاحية جلستك. يرجى تسجيل الدخول مرة أخرى.',
+};
+
+const LanguageContext = createContext<{ language: Language; t: (text: string) => string }>({ language: 'ar', t: (text) => text });
+const AuthContext = createContext<AuthState>({ loading: true, authenticated: false, onboardingCompleted: false, workspace: null, refresh: async () => {}, signOut: async () => {} });
+const useLanguage = () => useContext(LanguageContext);
+const useAuth = () => useContext(AuthContext);
+
+const apiRequest = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      ...init,
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    });
+  } catch {
+    throw Object.assign(new Error('Could not connect to the server.'), { status: 0 });
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new CustomEvent('fansconnect:session-expired'));
+    throw Object.assign(new Error(payload.message || payload.error || 'Workspace service unavailable.'), { status: response.status, payload });
+  }
+  return payload as T;
+};
+
 const workspaceApi = async <T,>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`/api/workspaces/current${path}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', 'x-workspace-role': 'owner', ...(init?.headers ?? {}) },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(payload.message || payload.error || 'Workspace service unavailable.') as Error & { payload?: unknown };
-    error.payload = payload;
-    throw error;
-  }
-  return payload as T;
-};
-
-const accountApi = async <T,>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(payload.message || 'FansConnect is unavailable right now.') as Error & { payload?: Record<string, unknown> };
-    error.payload = payload;
-    throw error;
-  }
-  return payload as T;
-};
-
-type SetupBundle = {
-  onboarding: { currentStep: number; completedSteps: number[]; completedAt: string | null };
-  profile: { businessName: string; activityType: string; description: string; phone: string; email: string; city: string; country: string } | null;
-  assistant: { welcomeMessage: string; businessInstructions: string; language: 'ar' | 'en' } | null;
-  channels: { type: string; status: string }[];
-  services: { id: string; name: string; price: string; currency: string }[];
-  autoReplies: { id: string; name: string; keywords: string[]; response: string }[];
-  trainingExamples: { id: string; customerMessage: string; businessResponse: string }[];
+  return apiRequest<T>(`/workspaces/current${path}`, init);
 };
 
 const liveChannelLabel = (channel: LiveChannel['channel']) => channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram Direct';
@@ -120,7 +241,7 @@ const appointmentsSeed = [
   { id: 4, client: 'Instagram enquiry', service: 'Product consultation', date: 'Saturday', time: '01:30 PM', status: 'Confirmed' },
 ];
 
-const navGroups = [
+const navGroups: { label: string; items: { href: string; label: string; icon: React.ElementType; count?: number }[] }[] = [
   { label: 'Workspace', items: [{ href: '/app', label: 'Overview', icon: LayoutDashboard }, { href: '/app/inbox', label: 'Inbox', icon: Inbox }, { href: '/app/contacts', label: 'Contacts', icon: Users }, { href: '/app/leads', label: 'Leads', icon: TrendingUp }, { href: '/app/appointments', label: 'Appointments', icon: CalendarDays }] },
   { label: 'Automation', items: [{ href: '/app/ai-assistant', label: 'AI assistant', icon: Bot }, { href: '/app/training', label: 'FAQ & auto-replies', icon: CircleHelp }, { href: '/app/training', label: 'Training', icon: BookOpen }, { href: '/app/flows', label: 'Flows', icon: Workflow }, { href: '/app/analytics', label: 'Analytics', icon: BarChart3 }, { href: '/app/campaigns', label: 'Campaigns', icon: Send }] },
   { label: 'Workspace settings', items: [{ href: '/app/business-profile', label: 'Business profile', icon: BriefcaseBusiness }, { href: '/app/channels', label: 'Channels', icon: Wifi }, { href: '/app/catalog', label: 'Catalog', icon: Store }, { href: '/app/orders', label: 'Orders', icon: FileText }, { href: '/app/billing', label: 'Plan & billing', icon: WalletCards }] },
@@ -149,7 +270,7 @@ function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tones[tone]}`}>{children}</span>;
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function LegacyShell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -159,27 +280,61 @@ function Shell({ children }: { children: React.ReactNode }) {
     workspaceApi<{ channels: LiveChannel[] }>('/channels').then(({ channels }) => {
       if (channels.some((item) => item.status === 'failed' || item.status === 'degraded')) setChannelHealth('Channel action needed');
       else if (channels.length > 0 && channels.every((item) => item.status === 'connected' && item.verified)) setChannelHealth('Channels verified');
-      else setChannelHealth('Channels not connected');
+      else setChannelHealth('Channel setup required');
     }).catch(() => setChannelHealth('Channel status unavailable'));
   }, []);
   return <div className="app-shell grain flex">
     <aside className={`desktop-sidebar fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[#2a5147] bg-[#173f36] px-4 py-5 text-[#ecede1] transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : ''}`}>
       <div className="mb-8 flex items-center justify-between px-2"><Brand dark /><button data-testid="button-close-sidebar" className="text-[#94b8a6] md:hidden" onClick={() => setMobileOpen(false)}><X size={19} /></button></div>
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-[#356357] bg-[#214c42] p-3"><div className="grid size-9 place-items-center rounded-xl bg-[#e8d8b8] font-display text-sm font-extrabold text-[#28574d]">FC</div><div className="min-w-0"><div className="truncate text-[13px] font-bold">Your workspace</div><div className="mt-0.5 text-[10px] text-[#9cbaab]">Complete your business profile</div></div><ChevronDown size={15} className="ml-auto text-[#9cbaab]" /></div>
-      <nav className="flex-1 space-y-6 overflow-y-auto">{navGroups.map(group => <div key={group.label}><div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#7ea496]">{group.label}</div><div className="space-y-1">{group.items.map(item => { const active = location === item.href || (item.href !== '/app' && location.startsWith(item.href)); const Icon = item.icon; return <Link key={item.label} href={item.href} data-testid={`link-${item.label.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-colors ${active ? 'bg-[#b8e3c2] text-[#173f36] shadow-[0_4px_16px_rgba(184,227,194,.12)]' : 'text-[#a9c4b7] hover:bg-[#214c42] hover:text-[#f1eadc]'}`}><Icon size={17} strokeWidth={active ? 2.5 : 1.8} /><span className="flex-1">{item.label}</span></Link>})}</div></div>)}</nav>
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-[#356357] bg-[#214c42] p-3"><div className="grid size-9 place-items-center rounded-xl bg-[#e8d8b8] font-display text-sm font-extrabold text-[#28574d]">FC</div><div className="min-w-0"><div className="truncate text-[13px] font-bold">Your workspace</div><div className="mt-0.5 text-[10px] text-[#9cbaab]">United Arab Emirates</div></div><ChevronDown size={15} className="ml-auto text-[#9cbaab]" /></div>
+      <nav className="flex-1 space-y-6 overflow-y-auto">{navGroups.map(group => <div key={group.label}><div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#7ea496]">{group.label}</div><div className="space-y-1">{group.items.map(item => { const active = location === item.href || (item.href !== '/app' && location.startsWith(item.href)); const Icon = item.icon; return <Link key={item.label} href={item.href} data-testid={`link-${item.label.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-colors ${active ? 'bg-[#b8e3c2] text-[#173f36] shadow-[0_4px_16px_rgba(184,227,194,.12)]' : 'text-[#a9c4b7] hover:bg-[#214c42] hover:text-[#f1eadc]'}`}><Icon size={17} strokeWidth={active ? 2.5 : 1.8} /><span className="flex-1">{item.label}</span>{item.count && <span className={`grid size-5 place-items-center rounded-full text-[10px] ${active ? 'bg-[#173f36] text-[#b8e3c2]' : 'bg-[#cc7c4c] text-white'}`}>{item.count}</span>}</Link>})}</div></div>)}</nav>
       <div className="mt-4 border-t border-[#2a5147] pt-4"><div className="mb-3 flex items-center gap-3 px-2"><Avatar initials="FC" tone="gold" size="sm" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">Workspace owner</div><div className="truncate text-[10px] text-[#91b1a2]">Admin account</div></div><button data-testid="button-sidebar-settings" onClick={() => setLocation('/app/business-profile')} className="text-[#91b1a2] hover:text-[#e8d8b8]"><Settings2 size={16} /></button></div><div className="flex items-center justify-between rounded-xl bg-[#214c42] px-3 py-2"><div className="flex items-center gap-2 text-[11px] text-[#b7d2c4]"><span className="size-2 rounded-full bg-[#e7c893]" />{channelHealth}</div><Link href="/app/channels" className="text-[#8aad9c] hover:text-[#e8d8b8]" aria-label="Manage channel setup"><CircleHelp size={14} /></Link></div></div>
     </aside>
     {mobileOpen && <button data-testid="button-overlay" className="fixed inset-0 z-30 bg-[#173f36]/35 md:hidden" onClick={() => setMobileOpen(false)} />}
       <main className="workspace ml-0 flex min-h-[100dvh] w-full flex-col md:ml-[248px]">
-        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#e6e0d4] bg-[#f8f5ec]/90 px-5 backdrop-blur-md md:px-9"><div className="flex items-center gap-3"><button data-testid="button-open-sidebar" className="text-[#315f54] md:hidden" onClick={() => setMobileOpen(true)}><Menu size={21} /></button><div><div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#82948c]">Your workspace</div><div className="font-display text-[19px] font-extrabold tracking-[-.035em] text-[#1c4b40]">{current}</div></div></div><div className="flex items-center gap-2.5"><div className="hidden items-center gap-2 rounded-xl border border-[#e4dfd3] bg-[#fbf9f3] px-3 py-2 text-[12px] text-[#87968e] lg:flex"><Search size={15} /><span>Search workspace</span><span className="ml-5 rounded-md bg-[#eeece4] px-1.5 py-0.5 font-mono-custom text-[9px]">⌘ K</span></div><button data-testid="button-notifications" className="focus-ring relative grid size-10 place-items-center rounded-xl border border-[#e4dfd3] bg-[#fbf9f3] text-[#5c746b] transition hover:bg-[#eee9dc]" aria-label="Notifications"><Bell size={17} /></button><div className="relative"><button data-testid="button-profile-menu" onClick={() => setProfileOpen(!profileOpen)} className="focus-ring flex items-center gap-2 rounded-xl px-1.5 py-1 text-left hover:bg-[#eee9dc]"><Avatar initials="FC" tone="gold" size="sm" /><ChevronDown size={14} className="text-[#82948c]" /></button>{profileOpen && <div className="absolute right-0 top-12 z-30 w-44 rounded-2xl border border-[#e1dbcf] bg-[#fbf9f3] p-1.5 shadow-[0_12px_35px_rgba(38,73,62,.14)]"><Link data-testid="link-profile-settings" href="/app/business-profile" className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#315f54] hover:bg-[#eee9dc]"><Settings2 size={14} />Workspace settings</Link><Link data-testid="link-sign-out" href="/login" className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#ad4b3c] hover:bg-[#f7e2dc]"><ArrowRight size={14} />Sign out</Link></div>}</div></div></header>
+        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#e6e0d4] bg-[#f8f5ec]/90 px-5 backdrop-blur-md md:px-9"><div className="flex items-center gap-3"><button data-testid="button-open-sidebar" className="text-[#315f54] md:hidden" onClick={() => setMobileOpen(true)}><Menu size={21} /></button><div><div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#82948c]">Your workspace</div><div className="font-display text-[19px] font-extrabold tracking-[-.035em] text-[#1c4b40]">{current}</div></div></div><div className="flex items-center gap-2.5"><div className="hidden items-center gap-2 rounded-xl border border-[#e4dfd3] bg-[#fbf9f3] px-3 py-2 text-[12px] text-[#87968e] lg:flex"><Search size={15} /><span>Search workspace</span><span className="ml-5 rounded-md bg-[#eeece4] px-1.5 py-0.5 font-mono-custom text-[9px]">⌘ K</span></div><button data-testid="button-notifications" className="focus-ring relative grid size-10 place-items-center rounded-xl border border-[#e4dfd3] bg-[#fbf9f3] text-[#5c746b] transition hover:bg-[#eee9dc]"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-[#cc7c4c]" /></button><div className="relative"><button data-testid="button-profile-menu" onClick={() => setProfileOpen(!profileOpen)} className="focus-ring flex items-center gap-2 rounded-xl px-1.5 py-1 text-left hover:bg-[#eee9dc]"><Avatar initials="FC" tone="gold" size="sm" /><ChevronDown size={14} className="text-[#82948c]" /></button>{profileOpen && <div className="absolute right-0 top-12 z-30 w-44 rounded-2xl border border-[#e1dbcf] bg-[#fbf9f3] p-1.5 shadow-[0_12px_35px_rgba(38,73,62,.14)]"><Link data-testid="link-profile-settings" href="/app/business-profile" className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#315f54] hover:bg-[#eee9dc]"><Settings2 size={14} />Workspace settings</Link><Link data-testid="link-sign-out" href="/login" className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#ad4b3c] hover:bg-[#f7e2dc]"><ArrowRight size={14} />Sign out</Link></div>}</div></div></header>
       <div className="flex-1 px-5 py-7 md:px-9 md:py-8">{children}</div>
-      <div className="mobile-nav fixed bottom-0 left-0 right-0 z-30 items-center justify-around border-t border-[#ded8ca] bg-[#fbf9f3]/95 px-2 py-2 backdrop-blur-md"><Link data-testid="link-mobile-overview" href="/app" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><LayoutDashboard size={18} /><span>Home</span></Link><Link data-testid="link-mobile-inbox" href="/app/inbox" className="relative grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Inbox size={18} /><span>Inbox</span></Link><Link data-testid="link-mobile-leads" href="/app/leads" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><TrendingUp size={18} /><span>Leads</span></Link><Link data-testid="link-mobile-settings" href="/app/business-settings" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Settings2 size={18} /><span>Settings</span></Link></div>
+      <div className="mobile-nav fixed bottom-0 left-0 right-0 z-30 items-center justify-around border-t border-[#ded8ca] bg-[#fbf9f3]/95 px-2 py-2 backdrop-blur-md"><Link data-testid="link-mobile-overview" href="/app" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><LayoutDashboard size={18} /><span>Home</span></Link><Link data-testid="link-mobile-inbox" href="/app/inbox" className="relative grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Inbox size={18} /><span>Inbox</span><span className="absolute right-1 top-0 size-2 rounded-full bg-[#cc7c4c]" /></Link><Link data-testid="link-mobile-leads" href="/app/leads" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><TrendingUp size={18} /><span>Leads</span></Link><Link data-testid="link-mobile-settings" href="/app/business-settings" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Settings2 size={18} /><span>Settings</span></Link></div>
     </main>
   </div>;
 }
 
-function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
+function Shell({ children }: { children: React.ReactNode }) {
+  const [location, setLocation] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const { t } = useLanguage();
+  const auth = useAuth();
+  const current = navGroups.flatMap((group) => group.items).find((item) => location === item.href)?.label ?? 'Overview';
+  const name = auth.workspace?.workspace.name || t('Workspace');
+  const email = auth.workspace?.user.email || '';
+  const role = auth.workspace?.user.role || '';
+  const initials = (name || email || 'FC').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const unread = auth.workspace?.counts.unreadConversations || 0;
+  const logout = async () => { await auth.signOut(); setLocation('/login'); };
+  return <div className="app-shell grain flex">
+    <aside className={`desktop-sidebar fixed inset-y-0 z-40 flex w-[248px] flex-col border-[#2a5147] bg-[#173f36] px-4 py-5 text-[#ecede1] transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : ''}`}>
+      <div className="mb-8 flex items-center justify-between px-2"><Brand dark /><button aria-label={t('Close')} className="text-[#94b8a6] md:hidden" onClick={() => setMobileOpen(false)}><X size={19} /></button></div>
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-[#356357] bg-[#214c42] p-3"><div className="grid size-9 place-items-center rounded-xl bg-[#e8d8b8] font-display text-sm font-extrabold text-[#28574d]">{initials}</div><div className="min-w-0"><div className="truncate text-[13px] font-bold">{name}</div><div className="mt-0.5 truncate text-[10px] text-[#9cbaab]">{email}</div></div></div>
+      <nav className="flex-1 space-y-6 overflow-y-auto">{navGroups.map((group) => <div key={group.label}><div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#7ea496]">{t(group.label)}</div><div className="space-y-1">{group.items.map((item) => { const active = location === item.href || (item.href !== '/app' && location.startsWith(item.href)); const Icon = item.icon; const count = item.href === '/app/inbox' ? unread : 0; return <Link key={item.label} href={item.href} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-colors ${active ? 'bg-[#b8e3c2] text-[#173f36]' : 'text-[#a9c4b7] hover:bg-[#214c42] hover:text-[#f1eadc]'}`}><Icon size={17} /><span className="flex-1">{t(item.label)}</span>{count > 0 && <span className="grid size-5 place-items-center rounded-full bg-[#cc7c4c] text-[10px] text-white">{count}</span>}</Link>; })}</div></div>)}</nav>
+      <div className="mt-4 border-t border-[#2a5147] pt-4"><div className="flex items-center gap-3 px-2"><Avatar initials={initials} tone="gold" size="sm" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">{email}</div><div className="truncate text-[10px] text-[#91b1a2]">{role}</div></div><button onClick={() => setLocation('/app/business-profile')} className="text-[#91b1a2]"><Settings2 size={16} /></button></div></div>
+    </aside>
+    {mobileOpen && <button aria-label={t('Close')} className="fixed inset-0 z-30 bg-[#173f36]/35 md:hidden" onClick={() => setMobileOpen(false)} />}
+    <main className="workspace flex min-h-[100dvh] w-full flex-col">
+      <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#e6e0d4] bg-[#f8f5ec]/90 px-5 backdrop-blur-md md:px-9"><div className="flex items-center gap-3"><button aria-label={t('Open menu')} className="text-[#315f54] md:hidden" onClick={() => setMobileOpen(true)}><Menu size={21} /></button><div><div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#82948c]">{name}</div><div className="font-display text-[19px] font-extrabold text-[#1c4b40]">{t(current)}</div></div></div><div className="flex items-center gap-2.5"><div className="hidden items-center gap-2 rounded-xl border border-[#e4dfd3] bg-[#fbf9f3] px-3 py-2 text-[12px] text-[#87968e] lg:flex"><Search size={15} /><span>{t('Search workspace')}</span></div><div className="relative"><button onClick={() => setProfileOpen(!profileOpen)} className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-[#eee9dc]"><Avatar initials={initials} tone="gold" size="sm" /><ChevronDown size={14} /></button>{profileOpen && <div className="profile-menu absolute top-12 z-30 w-48 rounded-2xl border border-[#e1dbcf] bg-[#fbf9f3] p-1.5 shadow-xl"><Link href="/app/business-profile" className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#315f54]"><Settings2 size={14} />{t('Business profile')}</Link><button onClick={() => void logout()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-[#ad4b3c]"><LogIn size={14} />{t('Sign out')}</button></div>}</div></div></header>
+      <div className="flex-1 px-5 py-7 pb-24 md:px-9 md:py-8">{children}</div>
+      <div className="mobile-nav fixed inset-x-0 bottom-0 z-30 items-center justify-around border-t border-[#ded8ca] bg-[#fbf9f3]/95 px-2 py-2 backdrop-blur-md"><Link href="/app" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><LayoutDashboard size={18} /><span>{t('Home')}</span></Link><Link href="/app/inbox" className="relative grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Inbox size={18} /><span>{t('Inbox')}</span>{unread > 0 && <span className="absolute right-1 top-0 size-2 rounded-full bg-[#cc7c4c]" />}</Link><Link href="/app/leads" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><TrendingUp size={18} /><span>{t('Leads')}</span></Link><Link href="/app/settings" className="grid justify-items-center gap-1 px-3 py-1 text-[10px] font-bold text-[#315f54]"><Settings2 size={18} /><span>{t('Settings')}</span></Link></div>
+    </main>
+  </div>;
+}
+
+function LegacyPageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
   return <div className="page-enter mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">{eyebrow ?? 'Workspace'}</div><h1 data-testid="text-page-title" className="font-display text-[30px] font-extrabold tracking-[-.05em] text-[#1b4a3f] md:text-[35px]">{title}</h1>{description && <p className="mt-2 max-w-xl text-[13px] leading-6 text-[#71847b]">{description}</p>}</div>{action}</div>;
+}
+
+function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
+  const { t } = useLanguage();
+  return <div className="page-enter mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">{t(eyebrow ?? 'Workspace')}</div><h1 data-testid="text-page-title" className="font-display text-[30px] font-extrabold tracking-[-.05em] text-[#1b4a3f] md:text-[35px]">{t(title)}</h1>{description && <p className="mt-2 max-w-xl text-[13px] leading-6 text-[#71847b]">{t(description)}</p>}</div>{action}</div>;
 }
 
 function MetricCard({ label, value, change, detail, icon: Icon, tone = 'green' }: { label: string; value: string; change: string; detail: string; icon: typeof TrendingUp; tone?: string }) {
@@ -209,7 +364,7 @@ function LegacyInboxPage() {
   return <Shell><div className="page-enter mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">Shared inbox</div><h1 className="font-display text-[30px] font-extrabold tracking-[-.05em] text-[#1b4a3f]">Stay close to every conversation.</h1></div><div className="flex gap-2"><Button variant="secondary"><Filter size={15} />Filters</Button><Button><Plus size={15} />New message</Button></div></div><div className="grid min-h-[650px] overflow-hidden rounded-2xl border border-[#e1dbce] bg-[#fbf9f3] shadow-[var(--shadow-card)] md:grid-cols-[300px_1fr_250px]"><section className="border-b border-[#e5dfd4] md:border-b-0 md:border-r"><div className="border-b border-[#eee9df] p-4"><div className="relative"><Search size={15} className="absolute left-3 top-3 text-[#98a69f]" /><input data-testid="input-search-inbox" placeholder="Search conversations" className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f5f2e9] py-2.5 pl-9 pr-3 text-xs text-[#315f54] outline-none placeholder:text-[#9aa69e]" /></div><div className="mt-3 flex gap-1 overflow-auto">{['All', 'WhatsApp', 'Instagram', 'Open'].map(item => <button data-testid={`button-filter-${item.toLowerCase()}`} key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${filter === item ? 'bg-[#d9e9d8] text-[#2f7055]' : 'text-[#899991] hover:bg-[#eee9df]'}`}>{item}</button>)}</div></div><div className="max-h-[545px] overflow-auto p-2">{filtered.map((conversation, i) => <button data-testid={`button-conversation-${conversation.id}`} key={conversation.id} onClick={() => setSelected(conversation.id)} className={`float-in flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${selected === conversation.id ? 'bg-[#e4f0e2]' : 'hover:bg-[#f0ede4]'}`} style={{ animationDelay: `${i * 55}ms` }}><div className="relative"><Avatar initials={conversation.avatar} tone={i % 3 === 0 ? 'clay' : i % 3 === 1 ? 'blue' : 'green'} size="sm" />{conversation.unread > 0 && <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[#cc7c4c] text-[9px] font-bold text-white">{conversation.unread}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-bold text-[#315f54]">{conversation.contactName}</span><span className="text-[10px] text-[#99a49e]">{conversation.timestamp}</span></div><div className="mt-1 truncate text-[11px] text-[#87958e]">{conversation.lastMessage}</div><div className="mt-2 flex items-center gap-1.5"><ChannelMark channel={conversation.channel} /><span className="text-[9px] font-bold text-[#8b9b92]">{conversation.status}</span></div></div></button>)}</div></section><section className="flex min-h-[550px] flex-col border-b border-[#e5dfd4] md:border-b-0 md:border-r"><div className="flex items-center justify-between border-b border-[#eee9df] px-5 py-3.5"><div className="flex items-center gap-3"><Avatar initials={current.avatar} tone="clay" /><div><div className="flex items-center gap-2 text-sm font-bold text-[#28574d]">{current.contactName}<ChannelMark channel={current.channel} /></div><div className="text-[10px] text-[#95a29c]">Last active 2 minutes ago</div></div></div><div className="flex gap-1"><button data-testid="button-mark-resolved" className="grid size-8 place-items-center rounded-lg text-[#759086] hover:bg-[#e8f0e4] hover:text-[#2e7355]" title="Mark resolved"><CheckCircle2 size={16} /></button><button data-testid="button-more-conversation" className="grid size-8 place-items-center rounded-lg text-[#759086] hover:bg-[#eee9df]"><MoreHorizontal size={17} /></button></div></div><div className="flex-1 space-y-4 overflow-auto bg-[#f7f4eb] p-5"><div className="flex justify-center"><span className="rounded-full bg-[#ebe7db] px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-[#95a198]">Today</span></div>{current.messages.map((msg, i) => <div key={`${current.id}-${i}`} className={`flex ${msg.from === 'team' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-xs leading-5 shadow-sm ${msg.from === 'team' ? 'rounded-br-md bg-[#d5ebd7] text-[#315f54]' : 'rounded-bl-md border border-[#e4ded3] bg-[#fbf9f3] text-[#506961]'}`}><div>{msg.text}</div><div className={`mt-1 text-[9px] ${msg.from === 'team' ? 'text-[#6d9580]' : 'text-[#9ba69f]'}`}>{msg.time}</div></div></div>)}{(sent[current.id] ?? []).map((text, i) => <div key={`sent-${i}`} className="flex justify-end"><div className="max-w-[78%] rounded-2xl rounded-br-md bg-[#d5ebd7] px-3.5 py-2.5 text-xs leading-5 text-[#315f54] shadow-sm"><div>{text}</div><div className="mt-1 text-[9px] text-[#6d9580]">Just now</div></div></div>)}</div><div className="border-t border-[#e6e0d5] bg-[#fbf9f3] p-4"><div className="flex items-end gap-2 rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] p-1.5"><textarea data-testid="textarea-reply" value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={1} placeholder="Write a reply in English or العربية..." className="focus-ring min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-xs text-[#315f54] outline-none placeholder:text-[#99a69e]" /><button data-testid="button-send-reply" onClick={send} className="grid size-9 place-items-center rounded-lg bg-[#235d51] text-[#f8f2e7] transition hover:bg-[#194c42] disabled:opacity-40" disabled={!message.trim()}><Send size={15} /></button></div><div className="mt-2 flex items-center justify-between px-1 text-[9px] text-[#9aa59f]"><span>Press Enter to send</span><button data-testid="button-suggest-reply" className="flex items-center gap-1 font-bold text-[#ad704c] hover:text-[#8f4f31]"><Sparkles size={11} />Suggest reply</button></div></div></section><aside className="hidden p-5 md:block"><div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[.15em] text-[#9aa59f]">Contact context</span><button data-testid="button-edit-contact" className="text-[#b66c43]"><Pencil size={14} /></button></div><div className="flex flex-col items-center text-center"><Avatar initials={current.avatar} tone="clay" size="lg" /><div className="mt-3 font-display text-[16px] font-extrabold text-[#28574d]">{current.contactName}</div><div className="mt-1 text-[11px] text-[#94a29b]">{current.channel === 'WhatsApp' ? '+966 55 291 8042' : '@mariam.studio'}</div></div><div className="my-5 border-t border-[#eee9df]" /><div className="space-y-4"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Labels</div><div className="flex flex-wrap gap-1.5">{current.tags.map(tag => <Badge key={tag} tone={tag === 'High intent' ? 'gold' : 'neutral'}>{tag}</Badge>)}<button data-testid="button-add-tag" className="grid size-6 place-items-center rounded-full border border-dashed border-[#c6cfc8] text-[#8ca098] hover:border-[#6da883] hover:text-[#39745a]"><Plus size={12} /></button></div></div><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Lead status</div><select data-testid="select-lead-status" className="w-full rounded-lg border border-[#e3ddd2] bg-[#f7f4eb] px-2.5 py-2 text-xs font-bold text-[#527068] outline-none"><option>Qualified</option><option>New</option><option>Follow-up</option><option>Won</option></select></div><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Notes</div><div className="rounded-xl bg-[#f3efe5] p-3 text-[11px] leading-5 text-[#7d8f86]">Interested in November. Prefers morning consultations.</div></div></div></aside></div></Shell>;
 }
 
-function InboxPage() {
+function LegacyRealInboxPage() {
   const [conversations, setConversations] = useState<LiveConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('All');
@@ -284,13 +439,11 @@ function InboxPage() {
   </Shell>;
 }
 
-function ChannelsPageV2() {
+function LegacyRealChannelsPageV2() {
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
-  const language = useAppLanguage();
-  const ar = language === 'ar';
 
   const loadChannels = () => {
     setLoading(true);
@@ -316,7 +469,7 @@ function ChannelsPageV2() {
     } catch (reason) {
       const payload = (reason as Error & { payload?: { channel?: LiveChannel } }).payload;
       if (payload?.channel) setChannels((previous) => previous.map((item) => item.channel === channel ? payload.channel! : item));
-      setNotice({ tone: 'error', text: ar ? 'تعذر بدء ربط القناة حالياً. حاول مرة أخرى لاحقاً.' : reason instanceof Error ? reason.message : 'Unable to connect this channel right now. Please try again later.' });
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'Provider verification failed.' });
     } finally {
       setBusy(null);
     }
@@ -329,16 +482,76 @@ function ChannelsPageV2() {
       await workspaceApi(`/channels/${channel}`, { method: 'DELETE' });
       loadChannels();
     } catch (reason) {
-      setNotice({ tone: 'error', text: ar ? 'تعذر إيقاف القناة حالياً. حاول مرة أخرى لاحقاً.' : reason instanceof Error ? reason.message : 'The channel could not be disconnected.' });
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'The channel could not be disconnected.' });
     } finally {
       setBusy(null);
     }
   };
 
-  return <SettingsLayout title={ar ? 'القنوات' : 'Channels'} description={ar ? 'اربط قنوات التواصل الخاصة بنشاطك لبدء استقبال رسائل العملاء وإدارتها من مكان واحد.' : 'Connect your business communication channels to receive and manage customer messages in one place.'}>
+  return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.">
     {notice && <div data-testid="channel-notice" className={`mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${notice.tone === 'error' ? 'border-[#e9c5be] bg-[#fdf3f0] text-[#a25243]' : 'border-[#d9e6d6] bg-[#e8f2e4] text-[#39745a]'}`}><AlertCircle size={15} className="mt-0.5 shrink-0" />{notice.text}</div>}
-    {loading ? <div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center text-xs font-bold text-[#6e8579]">{ar ? 'جارٍ التحقق من حالة القنوات…' : 'Checking channel status…'}</div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => { const isConnected = item.status === 'connected' && item.verified; const isFailed = item.status === 'failed'; const channelName = item.channel === 'whatsapp' ? 'WhatsApp' : 'Instagram'; const status = isConnected ? (ar ? 'متصل' : 'Connected') : item.status === 'connecting' ? (ar ? 'جارٍ الربط' : 'Connecting') : isFailed ? (ar ? 'حدث خطأ' : 'Error') : item.status === 'degraded' ? (ar ? 'متوقف مؤقتاً' : 'Paused') : (ar ? 'غير متصل' : 'Not connected'); return <div data-testid={`card-channel-${item.channel}`} key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}</h2><p data-testid={`status-channel-${item.channel}`} className="mt-1 text-[11px] text-[#82938b]">{isConnected && item.displayName ? `${status} · ${item.displayName}` : status}</p></div></div><Badge tone={isConnected ? 'green' : isFailed ? 'red' : item.status === 'connecting' ? 'blue' : 'gold'}>{status}</Badge></div><div className="mt-6 rounded-xl bg-[#f4f1e8] p-3 text-xs leading-5 text-[#71857b]"><div className="font-bold text-[#557269]">{isConnected ? (ar ? 'تم التحقق من القناة وهي جاهزة لاستقبال الرسائل.' : 'This channel is verified and ready to receive messages.') : item.channel === 'whatsapp' ? (ar ? 'اربط حساب WhatsApp Business الخاص بنشاطك للبدء في استقبال رسائل العملاء.' : 'Connect your WhatsApp Business account to start receiving customer messages.') : (ar ? 'اربط حساب Instagram Business الخاص بنشاطك لإدارة الرسائل من خلال FansConnect.' : 'Connect your Instagram Business account to manage messages through FansConnect.')}</div>{isFailed && <div className="mt-1">{ar ? 'يرجى المحاولة لاحقاً.' : 'Please try again later.'}</div>}</div><div className="mt-5 flex gap-2">{isConnected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{ar ? 'إيقاف القناة' : 'Disconnect'}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || item.status === 'connecting'}>{busy === item.channel ? (ar ? 'جارٍ الربط…' : 'Connecting…') : isFailed ? (ar ? 'إعادة المحاولة' : 'Try again') : ar ? `ربط ${channelName}` : `Connect ${channelName}`} <Link2 size={14} /></Button>}</div>{isConnected && item.lastVerifiedAt && <div className="mt-3 text-[10px] text-[#8a9a92]">{ar ? 'آخر تحقق' : 'Last verified'} {new Date(item.lastVerifiedAt).toLocaleString(ar ? 'ar-AE' : 'en-AE')}</div>}</div>; })}</div>}
+    {loading ? <div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center text-xs font-bold text-[#6e8579]">Checking provider state…</div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => { const isConnected = item.status === 'connected' && item.verified; const isFailed = item.status === 'failed'; return <div data-testid={`card-channel-${item.channel}`} key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{liveChannelLabel(item.channel)}</h2><p data-testid={`status-channel-${item.channel}`} className="mt-1 text-[11px] text-[#82938b]">{isConnected ? `Connected${item.displayName ? ` · ${item.displayName}` : ''}` : item.status === 'connecting' ? 'Authorization in progress' : item.status === 'failed' ? 'Verification failed' : item.status === 'disconnected' ? 'Disconnected' : 'Setup required'}</p></div></div><Badge tone={isConnected ? 'green' : isFailed ? 'red' : item.status === 'connecting' ? 'blue' : 'gold'}>{isConnected ? 'Verified' : item.status === 'connecting' ? 'Connecting' : isFailed ? 'Action needed' : 'Not ready'}</Badge></div><div className="mt-6 rounded-xl bg-[#f4f1e8] p-3 text-xs leading-5 text-[#71857b]"><div className="font-bold text-[#557269]">{item.health.message}</div>{item.health.action && <div className="mt-1">{item.health.action}</div>}</div>{isFailed && item.failureReason && <div className="mt-3 text-[11px] font-bold text-[#a25243]">{item.failureReason}</div>}<div className="mt-5 flex gap-2">{isConnected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>Disconnect</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || item.status === 'connecting'}>{busy === item.channel ? 'Checking…' : isFailed ? 'Try again' : 'Connect'} <Link2 size={14} /></Button>}</div>{isConnected && <div className="mt-3 text-[10px] text-[#8a9a92]">Last verified {item.lastVerifiedAt ? new Date(item.lastVerifiedAt).toLocaleString() : 'recently'}</div>}</div>; })}</div>}
   </SettingsLayout>;
+}
+
+function InboxPage() {
+  const { t } = useLanguage();
+  const [conversations, setConversations] = useState<LiveConversation[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const load = useCallback(async () => {
+    setState('loading');
+    try {
+      const result = await workspaceApi<{ conversations: LiveConversation[] }>('/conversations');
+      setConversations(result.conversations);
+      setSelected(result.conversations[0]?.id || null);
+      setState('ready');
+    } catch { setState('error'); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const current = conversations.find((item) => item.id === selected) || conversations[0];
+  const send = async () => {
+    if (!current || !message.trim()) return;
+    try {
+      const result = await workspaceApi<{ conversation: LiveConversation }>(`/conversations/${current.id}/replies`, { method: 'POST', body: JSON.stringify({ text: message.trim() }) });
+      setConversations((items) => items.map((item) => item.id === current.id ? result.conversation : item));
+      setMessage('');
+    } catch { setState('error'); }
+  };
+  return <Shell><PageHeading eyebrow="Shared inbox" title="Stay close to every conversation." description="Replies are sent through the verified channel that received the message." action={<Link href="/app/channels" className="rounded-xl border border-[#d9d4c8] px-3.5 py-2.5 text-xs font-bold text-[#28574d]">{t('Manage channels')}</Link>} />{state === 'loading' ? <div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Your inbox is loading.')}</div> : state === 'error' ? <div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div> : conversations.length === 0 ? <div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center"><Inbox size={28} className="mx-auto text-[#7da189]" /><h2 className="mt-4 font-display text-lg font-extrabold text-[#315f54]">{t('No conversations yet')}</h2><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-[#71857b]">{t('Connect and verify WhatsApp Business or Instagram to start receiving real customer messages. This inbox does not contain demo conversations.')}</p><Link href="/app/channels" className="mt-5 inline-flex rounded-xl bg-[#235d51] px-3.5 py-2.5 text-xs font-bold text-white">{t('Connect a channel')}</Link></div> : <div className="grid min-h-[620px] overflow-hidden rounded-2xl border border-[#e1dbce] bg-[#fbf9f3] md:grid-cols-[280px_1fr]"><aside className="border-e border-[#e5dfd4] p-2">{conversations.map((item) => <button key={item.id} onClick={() => setSelected(item.id)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-start ${current?.id === item.id ? 'bg-[#e4f0e2]' : ''}`}><Avatar initials={item.contactName.slice(0, 2).toUpperCase()} size="sm" /><span className="truncate text-xs font-bold">{item.contactName}</span></button>)}</aside>{current && <section className="flex flex-col"><div className="border-b p-4 text-sm font-bold">{current.contactName}</div><div className="flex-1 space-y-3 overflow-auto p-5">{current.messages.map((item) => <div key={item.id} className={`flex ${item.from === 'customer' ? 'justify-start' : 'justify-end'}`}><div className="max-w-[80%] rounded-2xl bg-[#e8f2e4] px-3.5 py-2.5 text-xs">{item.text}</div></div>)}</div><div className="flex gap-2 border-t p-4"><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={t('Write a reply in English or العربية...')} className="min-h-11 flex-1 rounded-xl border bg-[#f7f4eb] p-3 text-xs" /><Button onClick={() => void send()} disabled={!message.trim()}><Send size={15} /></Button></div></section>}</div>}</Shell>;
+}
+
+function ChannelsPageV2() {
+  const { t } = useLanguage();
+  const [channels, setChannels] = useState<LiveChannel[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [busy, setBusy] = useState('');
+  const load = useCallback(async () => {
+    setState('loading');
+    try {
+      const result = await workspaceApi<{ channels: LiveChannel[] }>('/channels');
+      setChannels(result.channels);
+      setState('ready');
+    } catch { setState('error'); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const connect = async (channel: LiveChannel['channel']) => {
+    setBusy(channel);
+    try {
+      const result = await workspaceApi<{ connectUrl: string | null }>(`/channels/${channel}/connect`, { method: 'POST', body: '{}' });
+      if (result.connectUrl) window.location.assign(result.connectUrl);
+      else await load();
+    } catch { setState('error'); }
+    finally { setBusy(''); }
+  };
+  const disconnect = async (channel: LiveChannel['channel']) => {
+    setBusy(channel);
+    try { await workspaceApi(`/channels/${channel}`, { method: 'DELETE' }); await load(); }
+    catch { setState('error'); }
+    finally { setBusy(''); }
+  };
+  return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.">{state === 'loading' ? <div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Checking provider state…')}</div> : state === 'error' ? <div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => { const connected = item.status === 'connected' && item.verified; const status = connected ? 'Connected' : item.status === 'connecting' ? 'Authorization in progress' : item.status === 'failed' ? 'Verification failed' : 'Disconnected'; return <article key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}</h2><p className="mt-1 text-[11px] text-[#82938b]">{t(status)}</p></div></div><Badge tone={connected ? 'green' : item.status === 'failed' ? 'red' : 'gold'}>{t(connected ? 'Verified' : 'Not ready')}</Badge></div>{item.failureReason && <p className="mt-4 text-xs font-bold text-[#a25243]">{item.failureReason}</p>}<div className="mt-5">{connected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{t('Disconnect')}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel}>{busy === item.channel ? t('Checking…') : `${t('Connect')} ${item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}`} <Link2 size={14} /></Button>}</div></article>; })}</div>}</SettingsLayout>;
 }
 
 function ContactsPage() {
@@ -421,35 +634,76 @@ function LegacyMarketingPage() {
   return <div className="grain min-h-[100dvh] overflow-hidden bg-[#f6f2e8] text-[#1b4a3f]"><header className="relative z-20 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 md:px-10"><Brand /><nav className="hidden items-center gap-8 text-xs font-bold text-[#6a7f75] md:flex"><a href="#product" className="transition hover:text-[#b66c43]">Product</a><a href="#how" className="transition hover:text-[#b66c43]">How it works</a><a href="#stories" className="transition hover:text-[#b66c43]">Customer stories</a></nav><div className="hidden items-center gap-3 md:flex"><Link data-testid="link-marketing-login" href="/login" className="px-3 py-2 text-xs font-bold text-[#557269] hover:text-[#b66c43]">Sign in</Link><Link data-testid="link-marketing-start" href="/register" className="inline-flex items-center gap-2 rounded-xl bg-[#235d51] px-4 py-2.5 text-xs font-bold text-[#f8f2e7] shadow-[0_5px_14px_rgba(35,93,81,.2)] transition hover:bg-[#194c42]">Start free <ArrowRight size={14} /></Link></div><button data-testid="button-marketing-menu" onClick={() => setMenu(!menu)} className="md:hidden"><Menu size={20} /></button></header>{menu && <div className="relative z-20 mx-5 rounded-2xl border border-[#e2dcd1] bg-[#fbf9f3] p-3 shadow-lg md:hidden"><a href="#product" className="block rounded-lg px-3 py-2 text-xs font-bold">Product</a><Link data-testid="link-mobile-start" href="/register" className="block rounded-lg px-3 py-2 text-xs font-bold text-[#b66c43]">Start free</Link></div>}<main><section className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-24 pt-16 md:grid-cols-[1.05fr_.95fr] md:px-10 md:pb-32 md:pt-24"><div className="absolute -left-24 top-20 size-72 rounded-full bg-[#e8d8b8]/35 blur-3xl" /><div className="page-enter relative"><div className="mb-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]"><span className="size-2 rounded-full bg-[#d49a66]" />The conversation cockpit for small business</div><h1 className="max-w-[650px] font-display text-[54px] font-extrabold leading-[.98] tracking-[-.075em] md:text-[78px]">Every hello<br /><span className="text-[#b66c43]">holds a future.</span></h1><p className="mt-7 max-w-[490px] text-[16px] leading-7 text-[#71857b] md:text-[18px]">SahaAI brings your WhatsApp and Instagram conversations into one warm, intelligent workspace — so you can follow up with the context that makes people feel remembered.</p><div className="mt-9 flex flex-wrap items-center gap-3"><Link data-testid="link-hero-start" href="/register" className="inline-flex items-center gap-2 rounded-xl bg-[#235d51] px-5 py-3.5 text-sm font-bold text-[#f8f2e7] shadow-[0_7px_18px_rgba(35,93,81,.2)] transition hover:-translate-y-0.5 hover:bg-[#194c42]">Start your free workspace <ArrowRight size={16} /></Link><a href="#how" className="inline-flex items-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-[#57736a] hover:bg-[#eee9de]">See how it works <ChevronRight size={16} /></a></div><div className="mt-10 flex items-center gap-4 text-[11px] text-[#899991]"><div className="flex -space-x-2"><Avatar initials="AA" tone="clay" size="sm" /><Avatar initials="MS" tone="blue" size="sm" /><Avatar initials="BN" tone="gold" size="sm" /></div><span><strong className="text-[#527167]">240+ businesses</strong> keeping the thread</span></div></div><div className="page-enter stagger-2 relative"><div className="absolute -right-10 -top-10 size-36 rounded-full bg-[#d5e8d4]/70 blur-2xl" /><div className="relative rounded-[28px] border border-[#d9d4c7] bg-[#fbf9f3] p-3 shadow-[0_25px_70px_rgba(43,79,67,.13)] md:rotate-[2deg]"><div className="rounded-[20px] bg-[#173f36] p-4 text-[#eff0e5]"><div className="mb-5 flex items-center justify-between"><div className="flex items-center gap-2"><div className="grid size-8 place-items-center rounded-lg bg-[#b8e3c2] text-[#173f36]"><MessageCircle size={16} /></div><div><div className="text-xs font-bold">sahaai</div><div className="text-[9px] text-[#92b4a4]">Bayt Noor Studio</div></div></div><div className="flex items-center gap-1.5 text-[9px] text-[#aed2ba]"><span className="size-1.5 rounded-full bg-[#b8e3c2]" />Live now</div></div><div className="mb-3 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wider text-[#86aa99]">Today at a glance</span><span className="rounded-md bg-[#28584b] px-2 py-1 text-[9px] text-[#acd1b8]">04 Jun 2024</span></div><div className="grid grid-cols-3 gap-2">{[['128', 'conversations'], ['23', 'new leads'], ['12', 'bookings']].map(([num, text]) => <div key={text} className="rounded-xl bg-[#214c42] p-3"><div className="font-mono-custom text-[19px] font-bold text-[#e8d8b8]">{num}</div><div className="mt-1 text-[9px] text-[#98bbab]">{text}</div></div>)}</div><div className="mt-4 rounded-xl bg-[#f4f1e8] p-3 text-[#315f54]"><div className="mb-3 flex items-center justify-between"><span className="text-[10px] font-bold">Needs your voice</span><span className="rounded-full bg-[#f3dfd8] px-2 py-1 text-[9px] font-bold text-[#aa5a44]">3 waiting</span></div>{conversationsSeed.slice(0, 2).map(c => <div key={c.id} className="flex items-center gap-2.5 border-t border-[#e6e0d5] py-2.5"><Avatar initials={c.avatar} tone="clay" size="sm" /><div className="min-w-0 flex-1"><div className="text-[10px] font-bold">{c.contactName}</div><div className="truncate text-[9px] text-[#8a9b92]">{c.lastMessage}</div></div><ChevronRight size={13} className="text-[#9ba8a0]" /></div>)}</div></div></div><div className="absolute -bottom-7 -left-7 flex items-center gap-3 rounded-2xl border border-[#dce6d8] bg-[#eaf3e6] px-4 py-3 shadow-[0_10px_28px_rgba(42,83,63,.1)]"><div className="grid size-8 place-items-center rounded-full bg-[#c6e2ca] text-[#3d805d]"><CheckCircle2 size={16} /></div><div><div className="text-[10px] font-bold text-[#39745a]">Saha resolved it</div><div className="text-[9px] text-[#759386]">without losing the lead</div></div></div></div></section><section id="product" className="border-y border-[#e2dcd1] bg-[#eee9dd] px-5 py-20 md:px-10 md:py-28"><div className="mx-auto max-w-7xl"><div className="grid gap-10 md:grid-cols-[.8fr_1.2fr]"><div><div className="mb-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">One clear view</div><h2 className="font-display text-[37px] font-extrabold leading-tight tracking-[-.06em] text-[#28574d] md:text-[49px]">Less hunting.<br />More <span className="text-[#b66c43]">being there.</span></h2></div><div className="grid gap-4 md:grid-cols-2"><div className="rounded-2xl border border-[#ded8cb] bg-[#f8f5ed] p-5"><div className="mb-10 grid size-10 place-items-center rounded-xl bg-[#dcecdf] text-[#39745a]"><Inbox size={19} /></div><h3 className="font-display text-[17px] font-extrabold text-[#315f54]">A shared inbox with memory</h3><p className="mt-2 text-xs leading-5 text-[#7d9087]">WhatsApp and Instagram, together. See what was said, who needs a reply, and what matters next.</p></div><div className="rounded-2xl border border-[#ded8cb] bg-[#f8f5ed] p-5"><div className="mb-10 grid size-10 place-items-center rounded-xl bg-[#f5e3bd] text-[#94672d]"><Bot size={19} /></div><h3 className="font-display text-[17px] font-extrabold text-[#315f54]">An assistant with good sense</h3><p className="mt-2 text-xs leading-5 text-[#7d9087]">Saha answers the easy things, speaks your language, and hands over the moments that need you.</p></div><div className="rounded-2xl border border-[#ded8cb] bg-[#f8f5ed] p-5 md:col-span-2"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><div className="mb-4 grid size-10 place-items-center rounded-xl bg-[#e6dbea] text-[#765888]"><TrendingUp size={19} /></div><h3 className="font-display text-[17px] font-extrabold text-[#315f54]">Follow the feeling through to revenue</h3><p className="mt-2 max-w-lg text-xs leading-5 text-[#7d9087]">From a “how much?” to a real booking. Leads, appointments, and patterns stay connected to the original conversation.</p></div><div className="flex items-end gap-1.5"><div className="h-10 w-5 rounded-t bg-[#d5e8d4]" /><div className="h-16 w-5 rounded-t bg-[#b8dcbf]" /><div className="h-24 w-5 rounded-t bg-[#7eaf8b]" /><div className="h-32 w-5 rounded-t bg-[#39745a]" /></div></div></div></div></div></div></section><section id="how" className="mx-auto max-w-7xl px-5 py-20 md:px-10 md:py-28"><div className="mb-12 max-w-xl"><div className="mb-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">A quieter operating rhythm</div><h2 className="font-display text-[38px] font-extrabold leading-tight tracking-[-.06em] text-[#28574d]">Your business has a voice.<br /><span className="text-[#b66c43]">Saha helps it travel.</span></h2></div><div className="grid gap-8 md:grid-cols-3">{[['01', 'Connect your channels', 'Bring your WhatsApp Business and Instagram conversations into one shared space.'], ['02', 'Teach Saha your way', 'Set your tone, hours, services, and the boundaries that keep every answer honest.'], ['03', 'Step in with context', 'When the moment is yours, you arrive with the whole thread — not just the last message.']].map(([num, title, text], i) => <div data-testid={`card-step-${i}`} key={num} className="border-t-2 border-[#d8d2c5] pt-5"><div className="mb-12 font-mono-custom text-sm font-bold text-[#b66c43]">{num}</div><h3 className="font-display text-[20px] font-extrabold text-[#315f54]">{title}</h3><p className="mt-3 max-w-xs text-sm leading-6 text-[#7c9086]">{text}</p></div>)}</div></section><section id="stories" className="bg-[#173f36] px-5 py-20 text-[#f1eadc] md:px-10 md:py-28"><div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[.9fr_1.1fr] md:items-center"><div><div className="mb-4 text-[10px] font-bold uppercase tracking-[.2em] text-[#9dc1ad]">The Bayt Noor note</div><blockquote className="font-display text-[31px] font-extrabold leading-[1.1] tracking-[-.05em] md:text-[43px]">“It feels like Saha understands that a customer is never just a ticket.”</blockquote><div className="mt-7 flex items-center gap-3"><Avatar initials="BN" tone="gold" /><div><div className="text-xs font-bold">Basma Noor</div><div className="mt-1 text-[10px] text-[#94b4a5]">Founder, Bayt Noor Studio · Riyadh</div></div></div></div><div className="rounded-3xl border border-[#356357] bg-[#214c42] p-6 md:p-8"><div className="mb-8 flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-bold"><span className="grid size-8 place-items-center rounded-lg bg-[#b8e3c2] text-[#173f36]"><MessageCircle size={16} /></span>sahaai</div><Badge tone="green">In their words</Badge></div><div className="grid gap-6 sm:grid-cols-3"><div><div className="font-mono-custom text-[27px] font-bold text-[#e8d8b8]">42s</div><div className="mt-1 text-[10px] text-[#9ab9aa]">average first reply</div></div><div><div className="font-mono-custom text-[27px] font-bold text-[#e8d8b8]">74.2%</div><div className="mt-1 text-[10px] text-[#9ab9aa]">resolved by Saha</div></div><div><div className="font-mono-custom text-[27px] font-bold text-[#e8d8b8]">18.6%</div><div className="mt-1 text-[10px] text-[#9ab9aa]">lead conversion</div></div></div><div className="mt-9 border-t border-[#356357] pt-5 text-xs leading-6 text-[#a9c7b8]">“We stopped opening conversations with anxiety. Now we open them knowing the story.”</div></div></div></section><section className="px-5 py-20 text-center md:px-10 md:py-28"><div className="mx-auto max-w-2xl"><div className="mb-4 text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">Begin with one conversation</div><h2 className="font-display text-[42px] font-extrabold leading-none tracking-[-.07em] text-[#28574d] md:text-[61px]">Make room for<br /><span className="text-[#b66c43]">the good work.</span></h2><p className="mx-auto mt-6 max-w-md text-sm leading-6 text-[#7b8f85]">Your first 14 days are on us. Bring your channels, invite your team, and let the busywork become background.</p><Link data-testid="link-footer-start" href="/register" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-[#235d51] px-5 py-3.5 text-sm font-bold text-[#f8f2e7] shadow-[0_7px_18px_rgba(35,93,81,.2)] transition hover:-translate-y-0.5 hover:bg-[#194c42]">Start your free workspace <ArrowRight size={16} /></Link></div></section></main><footer className="border-t border-[#e2dcd1] px-5 py-7 md:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-[10px] text-[#93a098] md:flex-row md:items-center"><Brand /><div className="flex gap-5"><span>English · العربية</span><span>Privacy</span><span>Terms</span><span>© 2024 SahaAI</span></div></div></footer></div>;
 }
 
-const LANGUAGE_EVENT = 'fansconnect-language-change';
-
-function useAppLanguage() {
-  const [language, setLanguage] = useState<'en' | 'ar'>(() => {
-    if (typeof window === 'undefined') return 'en';
-    if (new URLSearchParams(window.location.search).get('lang') === 'ar') return 'ar';
-    return window.localStorage.getItem('fansconnect-language') === 'ar' ? 'ar' : 'en';
-  });
-  useEffect(() => {
-    const update = (event: Event) => setLanguage((event as CustomEvent<'en' | 'ar'>).detail);
-    window.addEventListener(LANGUAGE_EVENT, update);
-    return () => window.removeEventListener(LANGUAGE_EVENT, update);
-  }, []);
-  return language;
-}
-
-function LanguageRuntime() {
-  const [language, setLanguage] = useState<'en' | 'ar'>(() => {
-    if (typeof window === 'undefined') return 'en';
-    if (new URLSearchParams(window.location.search).get('lang') === 'ar') return 'ar';
-    return window.localStorage.getItem('fansconnect-language') === 'ar' ? 'ar' : 'en';
+function LanguageRuntime({ children }: { children: React.ReactNode }) {
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window === 'undefined') return 'ar';
+    return window.localStorage.getItem('fansconnect-language') === 'en' ? 'en' : 'ar';
   });
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     window.localStorage.setItem('fansconnect-language', language);
-    window.dispatchEvent(new CustomEvent(LANGUAGE_EVENT, { detail: language }));
   }, [language]);
-  return <button aria-label="Switch application language" data-testid="button-language-toggle" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')} className="language-toggle fixed bottom-5 left-5 z-50 inline-flex items-center gap-2 rounded-xl border border-[#d8d1c4] bg-[#fbf9f3] px-3 py-2 text-[11px] font-bold text-[#315f54] shadow-lg transition hover:-translate-y-0.5"><Languages size={14} />{language === 'en' ? 'العربية' : 'English'}</button>;
+  const t = useCallback((text: string) => language === 'ar' ? (ar[text] || text) : text, [language]);
+  return <LanguageContext.Provider value={{ language, t }}><button aria-label="Switch application language" data-testid="button-language-toggle" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')} className="language-toggle fixed bottom-5 z-50 inline-flex items-center gap-2 rounded-xl border border-[#d8d1c4] bg-[#fbf9f3] px-3 py-2 text-[11px] font-bold text-[#315f54] shadow-lg transition hover:-translate-y-0.5"><Languages size={14} />{language === 'en' ? 'العربية' : 'English'}</button>{children}</LanguageContext.Provider>;
+}
+
+function AuthRuntime({ children }: { children: React.ReactNode }) {
+  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [workspace, setWorkspace] = useState<WorkspaceContextData | null>(null);
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const session = await apiRequest<{ authenticated: boolean; onboardingCompleted?: boolean }>('/auth/session');
+      if (!session.authenticated) {
+        setAuthenticated(false);
+        setWorkspace(null);
+        setOnboardingCompleted(false);
+        return;
+      }
+      const context = await workspaceApi<WorkspaceContextData>('');
+      setAuthenticated(true);
+      setWorkspace(context);
+      setOnboardingCompleted(Boolean(session.onboardingCompleted));
+    } catch {
+      setAuthenticated(false);
+      setWorkspace(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+    const expire = () => {
+      setAuthenticated(false);
+      setWorkspace(null);
+      setLoading(false);
+    };
+    window.addEventListener('fansconnect:session-expired', expire);
+    return () => window.removeEventListener('fansconnect:session-expired', expire);
+  }, [refresh]);
+  const signOut = useCallback(async () => {
+    try { await apiRequest('/auth/logout', { method: 'POST' }); } finally {
+      setAuthenticated(false);
+      setWorkspace(null);
+      setOnboardingCompleted(false);
+    }
+  }, []);
+  return <AuthContext.Provider value={{ loading, authenticated, onboardingCompleted, workspace, refresh, signOut }}>{children}</AuthContext.Provider>;
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const auth = useAuth();
+  const { t } = useLanguage();
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (!auth.loading && !auth.authenticated) setLocation('/login?expired=1');
+  }, [auth.authenticated, auth.loading, setLocation]);
+  if (auth.loading) return <div className="grid min-h-[100dvh] place-items-center bg-[#f6f2e8] text-sm font-bold text-[#557269]">{t('Checking channels…')}</div>;
+  if (!auth.authenticated) return null;
+  return <>{children}</>;
 }
 
 function PublicHeader() {
@@ -493,27 +747,69 @@ function PublicInfoPage({ type }: { type: 'features' | 'pricing' | 'faq' | 'cont
   return <div className="grain min-h-[100dvh] bg-[#f6f2e8] text-[#1b4a3f]"><PublicHeader /><main className="mx-auto max-w-7xl px-5 pb-24 pt-14 md:px-10 md:pt-24"><div className="max-w-2xl"><div className="mb-4 text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">{content.eyebrow}</div><h1 className="font-display text-[46px] font-extrabold leading-none tracking-[-.07em] text-[#28574d] md:text-[70px]">{content.title}</h1><p className="mt-6 text-base leading-7 text-[#71857b]">{content.text}</p></div><div className="mt-12 grid gap-4 md:grid-cols-2">{cards.map(([heading, detail, label]) => <article key={heading} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-6 shadow-[var(--shadow-soft)]"><h2 className="font-display text-xl font-extrabold text-[#315f54]">{heading}</h2><p className="mt-3 text-sm leading-6 text-[#82938b]">{detail}</p><Link href={type === 'contact' ? '/contact' : '/register'} className="mt-5 inline-flex items-center gap-2 text-xs font-bold text-[#b66c43]">{label} <ArrowRight size={13} /></Link></article>)}</div></main></div>;
 }
 
-function AuthPageV2({ register = false }: { register?: boolean }) {
+function LegacyAuthPageV2({ register = false }: { register?: boolean }) {
   const [, setLocation] = useLocation();
   const [showPassword, setShowPassword] = useState(false);
+  return <div className="grain flex min-h-[100dvh] bg-[#f6f2e8]"><div className="hidden w-[47%] flex-col justify-between bg-[#173f36] p-10 text-[#f1eadc] lg:flex"><Brand dark /><div className="max-w-md"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.2em] text-[#9ec4b0]"><span className="size-2 rounded-full bg-[#b8e3c2]" />A calmer way to grow</div><h1 className="font-display text-[54px] font-extrabold leading-[.98] tracking-[-.07em]">Keep the thread.<br /><span className="text-[#b8e3c2]">Grow the trust.</span></h1><p className="mt-6 max-w-sm text-[15px] leading-7 text-[#b3cdbf]">FansConnect gives modern teams one place to follow every conversation from first hello to lasting relationship.</p></div><div className="text-[10px] text-[#789e8e]">Built for businesses across the UAE</div></div><div className="flex flex-1 flex-col px-6 py-8 md:px-16 lg:px-20"><div className="lg:hidden"><Brand /></div><div className="mx-auto flex w-full max-w-[410px] flex-1 flex-col justify-center"><div className="mb-8 mt-10 lg:mt-0"><div className="mb-3 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">{register ? 'Start your workspace' : 'Welcome back'}</div><h2 className="font-display text-[32px] font-extrabold tracking-[-.06em] text-[#1b4a3f]">{register ? 'A better inbox starts here.' : 'Good to see you again.'}</h2><p className="mt-2 text-sm text-[#7e9087]">{register ? 'Set up your workspace in a few minutes. No credit card needed.' : 'Sign in to pick up exactly where your customers left you.'}</p></div><form onSubmit={e => { e.preventDefault(); setLocation(register ? '/onboarding' : '/app'); }} className="space-y-4"><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">Work email</span><input required type="email" placeholder="you@yourbusiness.com" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /></label>{register && <label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">Business name</span><input required placeholder="Your business" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /></label>}<label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">Password</span><div className="relative"><input required type={showPassword ? 'text' : 'password'} placeholder="At least 8 characters" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 pr-12 text-sm outline-none" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-[#8b9c93]">{showPassword ? <Eye size={17} /> : <LockKeyhole size={16} />}</button></div></label>{!register && <Link href="/forgot-password" className="block text-right text-[11px] font-bold text-[#b66c43]">Forgot password?</Link>}<Button type="submit" className="w-full py-3.5">{register ? 'Create workspace' : 'Sign in to FansConnect'}<ArrowRight size={15} /></Button></form><div className="mt-7 text-center text-xs text-[#819189]">{register ? 'Already have a workspace?' : 'New to FansConnect?'} <Link href={register ? '/login' : '/register'} className="font-bold text-[#b66c43]">{register ? 'Sign in' : 'Create an account'}</Link></div></div><div className="mt-8 text-center text-[10px] text-[#a2aca6]">By continuing, you agree to FansConnect’s terms and privacy policy.</div></div></div>;
+}
+
+function AuthPageV2({ mode: requestedMode = 'login', register = false }: { mode?: 'login' | 'register' | 'forgot' | 'reset' | 'verify'; register?: boolean }) {
+  const mode = register ? 'register' : requestedMode;
+  const { t } = useLanguage();
+  const auth = useAuth();
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [actionLink, setActionLink] = useState('');
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+  const expired = new URLSearchParams(window.location.search).get('expired') === '1';
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setBusy(true);
-    setError('');
+    setBusy(true); setError(''); setMessage('');
     try {
-      const result = await accountApi<{ onboardingCompleted: boolean }>(register ? '/auth/register' : '/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-      setLocation(result.onboardingCompleted ? '/app' : '/onboarding');
+      if (mode === 'register') {
+        const result = await apiRequest<{ onboardingCompleted: boolean }>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, businessName }) });
+        await auth.refresh();
+        setLocation('/verify-email');
+      } else if (mode === 'login') {
+        const result = await apiRequest<{ onboardingCompleted: boolean; requiresEmailVerification: boolean }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        await auth.refresh();
+        setLocation(result.requiresEmailVerification ? '/verify-email' : result.onboardingCompleted ? '/app' : '/onboarding');
+      } else if (mode === 'forgot') {
+        const result = await apiRequest<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+        setMessage(result.message);
+      } else if (mode === 'reset') {
+        const result = await apiRequest<{ message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
+        setMessage(result.message);
+        window.setTimeout(() => setLocation('/login'), 900);
+      } else if (token) {
+        await apiRequest('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) });
+        await auth.refresh();
+        setMessage(t('Email verified'));
+        window.setTimeout(() => setLocation(auth.onboardingCompleted ? '/app' : '/onboarding'), 700);
+      } else {
+        try {
+          const result = await apiRequest<{ message: string }>('/auth/verify-email/dev', { method: 'POST' });
+          setMessage(result.message);
+          await auth.refresh();
+          window.setTimeout(() => setLocation('/onboarding'), 700);
+        } catch (reason) {
+          if (!(reason instanceof Error) || (reason as Error & { status?: number }).status !== 404) throw reason;
+          const result = await apiRequest<{ message: string }>('/auth/resend-verification', { method: 'POST' });
+          setMessage(result.message);
+        }
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Sign in could not be completed.');
-    } finally {
-      setBusy(false);
-    }
+      setError(reason instanceof Error ? reason.message : t('Could not connect to the server.'));
+    } finally { setBusy(false); }
   };
-  return <div className="grain flex min-h-[100dvh] bg-[#f6f2e8]"><div className="hidden w-[47%] flex-col justify-between bg-[#173f36] p-10 text-[#f1eadc] lg:flex"><Brand dark /><div className="max-w-md"><div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.2em] text-[#9ec4b0]"><span className="size-2 rounded-full bg-[#b8e3c2]" />A calmer way to grow</div><h1 className="font-display text-[54px] font-extrabold leading-[.98] tracking-[-.07em]">Keep the thread.<br /><span className="text-[#b8e3c2]">Grow the trust.</span></h1><p className="mt-6 max-w-sm text-[15px] leading-7 text-[#b3cdbf]">FansConnect gives modern teams one place to follow every conversation from first hello to lasting relationship.</p></div><div className="text-[10px] text-[#789e8e]">Built for businesses across the UAE</div></div><div className="flex flex-1 flex-col px-6 py-8 md:px-16 lg:px-20"><div className="lg:hidden"><Brand /></div><div className="mx-auto flex w-full max-w-[410px] flex-1 flex-col justify-center"><div className="mb-8 mt-10 lg:mt-0"><div className="mb-3 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">{register ? 'Start your workspace' : 'Welcome back'}</div><h2 className="font-display text-[32px] font-extrabold tracking-[-.06em] text-[#1b4a3f]">{register ? 'A better inbox starts here.' : 'Good to see you again.'}</h2><p className="mt-2 text-sm text-[#7e9087]">{register ? 'Set up your empty workspace in a few minutes. No credit card needed.' : 'Sign in to continue with your workspace.'}</p></div><form onSubmit={submit} className="space-y-4"><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">Work email</span><input required type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" placeholder="you@yourbusiness.com" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /></label><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">Password</span><div className="relative"><input required minLength={8} value={password} onChange={event => setPassword(event.target.value)} autoComplete={register ? 'new-password' : 'current-password'} type={showPassword ? 'text' : 'password'} placeholder="At least 8 characters" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 pr-12 text-sm outline-none" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-[#8b9c93]" aria-label="Show password">{showPassword ? <Eye size={17} /> : <LockKeyhole size={16} />}</button></div></label>{error && <div className="rounded-xl border border-[#e9c5be] bg-[#fdf3f0] px-4 py-3 text-xs font-bold text-[#a25243]">{error}</div>}{!register && <Link href="/forgot-password" className="block text-right text-[11px] font-bold text-[#b66c43]">Forgot password?</Link>}<Button type="submit" disabled={busy} className="w-full py-3.5">{busy ? 'Please wait…' : register ? 'Create workspace' : 'Sign in to FansConnect'}<ArrowRight size={15} /></Button></form><div className="mt-7 text-center text-xs text-[#819189]">{register ? 'Already have a workspace?' : 'New to FansConnect?'} <Link href={register ? '/login' : '/register'} className="font-bold text-[#b66c43]">{register ? 'Sign in' : 'Create an account'}</Link></div></div><div className="mt-8 text-center text-[10px] text-[#a2aca6]">By continuing, you agree to FansConnect’s terms and privacy policy.</div></div></div>;
+  const title = mode === 'register' ? 'A better inbox starts here.' : mode === 'forgot' ? 'Reset your password' : mode === 'reset' ? 'Reset your password' : mode === 'verify' ? 'Verify your email' : 'Good to see you again.';
+  return <div className="grain flex min-h-[100dvh] bg-[#f6f2e8]"><aside className="hidden w-[44%] flex-col justify-between bg-[#173f36] p-10 text-[#f1eadc] lg:flex"><Brand dark /><div><h1 className="font-display text-5xl font-extrabold leading-tight">{t('Keep the thread.')}<br /><span className="text-[#b8e3c2]">{t('Grow the trust.')}</span></h1><p className="mt-6 max-w-md leading-7 text-[#b3cdbf]">FansConnect</p></div><div className="text-xs text-[#789e8e]">UAE · العربية · English</div></aside><main className="flex flex-1 flex-col px-6 py-8 md:px-16"><div className="lg:hidden"><Brand /></div><div className="mx-auto flex w-full max-w-[410px] flex-1 flex-col justify-center"><div className="mb-8"><div className="mb-3 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">{t(mode === 'register' ? 'Start your workspace' : mode === 'login' ? 'Welcome back' : title)}</div><h2 className="font-display text-[32px] font-extrabold text-[#1b4a3f]">{t(title)}</h2></div>{expired && <div className="mb-4 rounded-xl bg-[#fff0eb] p-3 text-xs font-bold text-[#9c5144]">{t('Your session has expired. Please sign in again.')}</div>}{error && <div role="alert" className="mb-4 rounded-xl bg-[#fff0eb] p-3 text-xs font-bold text-[#9c5144]">{t(error)}</div>}{message && <div className="mb-4 rounded-xl bg-[#e5f1e3] p-3 text-xs font-bold text-[#39745a]">{t(message)}{actionLink && <Link href={actionLink} className="ms-2 underline">{t(mode === 'forgot' ? 'Reset password' : 'Verify email')}</Link>}</div>}<form onSubmit={submit} className="space-y-4">{(mode === 'login' || mode === 'register' || mode === 'forgot') && <label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">{t('Work email')}</span><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /></label>}{mode === 'register' && <label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">{t('Business name (optional)')}</span><input value={businessName} onChange={(event) => setBusinessName(event.target.value)} className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /></label>}{(mode === 'login' || mode === 'register' || mode === 'reset') && <label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-[#879890]">{t(mode === 'reset' ? 'New password' : 'Password')}</span><div className="relative"><input required minLength={8} type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#fbf9f3] px-3.5 py-3.5 text-sm outline-none" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="field-icon absolute top-3.5 text-[#8b9c93]">{showPassword ? <Eye size={17} /> : <LockKeyhole size={16} />}</button></div></label>}{mode === 'login' && <Link href="/forgot-password" className="block text-end text-[11px] font-bold text-[#b66c43]">{t('Forgot password?')}</Link>}<Button type="submit" disabled={busy} className="w-full py-3.5">{busy ? t('Checking…') : t(mode === 'register' ? 'Create workspace' : mode === 'login' ? 'Sign in to FansConnect' : mode === 'forgot' ? 'Send reset link' : mode === 'reset' ? 'Reset password' : 'Verify email')}<ArrowRight size={15} /></Button></form>{(mode === 'login' || mode === 'register') && <div className="mt-7 text-center text-xs text-[#819189]">{t(mode === 'register' ? 'Already have a workspace?' : 'New to FansConnect?')} <Link href={mode === 'register' ? '/login' : '/register'} className="font-bold text-[#b66c43]">{t(mode === 'register' ? 'Sign in' : 'Create an account')}</Link></div>}</div></main></div>;
 }
 
 function WorkspaceModulePage({ title, eyebrow, description, icon: Icon, items, action = 'Add item' }: { title: string; eyebrow: string; description: string; icon: React.ElementType; items: { name: string; detail: string; status?: string }[]; action?: string }) {
@@ -530,7 +826,7 @@ function LegacyChannelsPageV2() {
   return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram to bring customer conversations into one shared inbox."><div className="grid gap-5 md:grid-cols-2"><div className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#d8f0dc] text-[#287550]"><MessageCircle size={22} /></div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">WhatsApp Business</h2><p className="mt-1 text-[11px] text-[#82938b]">Not connected</p></div></div><p className="mt-6 text-xs leading-5 text-[#71857b]">Connect your business number to receive messages, send approved templates, and keep your team in sync.</p><Button className="mt-5">Connect WhatsApp <Link2 size={14} /></Button></div><div className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#f6dbe8] text-[#a14472]"><Instagram size={22} /></div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">Instagram Direct</h2><p className="mt-1 text-[11px] text-[#82938b]">Not connected</p></div></div><p className="mt-6 text-xs leading-5 text-[#71857b]">Connect a professional account to manage direct messages alongside WhatsApp.</p><Button className="mt-5">Connect Instagram <Link2 size={14} /></Button></div></div></SettingsLayout>;
 }
 
-function BusinessProfilePageV2() {
+function LegacyBusinessProfilePageV2() {
   const [saved, setSaved] = useState(false);
   return <SettingsLayout title="Business profile" description="Keep the details your team and assistant use to represent your business accurate." action={<Button onClick={() => setSaved(true)}>{saved ? 'Saved' : 'Save changes'} <Save size={14} /></Button>}><div className="space-y-5 rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="grid gap-5 md:grid-cols-2"><label><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Business name</span><input defaultValue="Your business" className="focus-ring mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none" /></label><label><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Industry</span><select defaultValue="Services" className="focus-ring mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none"><option>Services</option><option>Retail</option><option>Beauty and wellness</option><option>Hospitality</option></select></label><label><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Country</span><select defaultValue="United Arab Emirates" className="focus-ring mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none"><option>United Arab Emirates</option></select></label><label><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Timezone</span><select defaultValue="Asia/Dubai" className="focus-ring mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none"><option>Asia/Dubai (GMT+4)</option></select></label></div>{saved && <div className="flex items-center gap-2 rounded-xl bg-[#e5f1e3] px-4 py-3 text-xs font-bold text-[#39745a]"><CheckCircle2 size={15} />Your profile is up to date.</div>}</div></SettingsLayout>;
 }
@@ -549,105 +845,80 @@ function SettingsPageV2() {
   return <SettingsLayout title="Settings" description="Manage workspace preferences, language, notifications, and access."><div className="space-y-4">{[['Language and direction', 'English and Arabic are supported with automatic RTL layout.'], ['Notifications', 'Choose which workspace events should alert your team.'], ['Team access', 'Invite teammates and manage workspace roles.'], ['Security', 'Review sessions and keep account recovery details current.']].map(([name, detail]) => <div key={name} className="flex items-center justify-between rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">{name}</h2><p className="mt-1 text-xs text-[#82938b]">{detail}</p></div><button className="text-xs font-bold text-[#b66c43]">Manage <ArrowUpRight size={13} className="inline" /></button></div>)}</div></SettingsLayout>;
 }
 
-function OnboardingPage() {
+function LegacyOnboardingPage() {
   const [, setLocation] = useLocation();
   const [step, setStep] = useState(1);
-  const [data, setData] = useState<SetupBundle | null>(null);
-  const [businessName, setBusinessName] = useState('');
+  return <div className="grain min-h-[100dvh] bg-[#f6f2e8] px-5 py-8"><div className="mx-auto max-w-2xl"><Brand /><div className="mt-16 rounded-3xl border border-[#e3ddd2] bg-[#fbf9f3] p-6 shadow-[var(--shadow-soft)] md:p-10"><div className="mb-8 flex items-center justify-between"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">Workspace setup</div><h1 className="mt-2 font-display text-3xl font-extrabold text-[#28574d]">{step === 1 ? 'Tell us about your business.' : step === 2 ? 'Choose your channels.' : 'Your workspace is ready.'}</h1></div><span className="text-xs font-bold text-[#8a9a92]">Step {step} of 3</span></div>{step === 1 && <div className="space-y-4"><input placeholder="Business name" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /><select defaultValue="Services" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none"><option>Services</option><option>Retail</option><option>Beauty and wellness</option></select></div>}{step === 2 && <div className="grid gap-3 md:grid-cols-2"><button className="rounded-2xl border border-[#b9d8bd] bg-[#e8f2e4] p-5 text-left"><MessageCircle size={20} className="text-[#287550]" /><div className="mt-4 text-sm font-bold text-[#315f54]">WhatsApp Business</div><div className="mt-1 text-xs text-[#82938b]">Connect later from Channels</div></button><button className="rounded-2xl border border-[#e3ddd2] bg-[#f7f4eb] p-5 text-left"><Instagram size={20} className="text-[#a14472]" /><div className="mt-4 text-sm font-bold text-[#315f54]">Instagram Direct</div><div className="mt-1 text-xs text-[#82938b]">Connect later from Channels</div></button></div>}{step === 3 && <div className="rounded-2xl bg-[#e8f2e4] p-5 text-sm leading-6 text-[#557269]"><CheckCircle2 className="mb-3 text-[#39745a]" />Your workspace has been created. Connect a channel when you are ready to start receiving conversations.</div>}<div className="mt-8 flex justify-end"><Button onClick={() => step < 3 ? setStep(step + 1) : setLocation('/app')}>{step < 3 ? 'Continue' : 'Open workspace'} <ArrowRight size={15} /></Button></div></div></div></div>;
+}
+
+function BusinessProfilePageV2() {
+  const { t } = useLanguage();
+  const auth = useAuth();
+  const [businessName, setBusinessName] = useState(auth.workspace?.profile?.businessName || auth.workspace?.workspace.name || '');
+  const [activityType, setActivityType] = useState(auth.workspace?.profile?.activityType || '');
+  const [country, setCountry] = useState(auth.workspace?.profile?.country || 'United Arab Emirates');
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const save = async () => {
+    setState('saving');
+    try {
+      await workspaceApi('/profile', { method: 'PUT', body: JSON.stringify({ businessName, activityType, country }) });
+      await auth.refresh();
+      setState('saved');
+    } catch { setState('error'); }
+  };
+  return <SettingsLayout title="Business profile" description="Keep your real business details available to your team and assistant." action={<Button onClick={() => void save()} disabled={state === 'saving'}><Save size={15} />{t(state === 'saved' ? 'Saved' : 'Save changes')}</Button>}><div className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5">{state === 'error' && <div className="mb-4 rounded-xl bg-[#fff0eb] p-3 text-xs font-bold text-[#9c5144]">{t('Could not connect to the server.')}</div>}<div className="grid gap-5 md:grid-cols-2"><label><span className="mb-2 block text-[11px] font-bold uppercase text-[#889890]">{t('Business name')}</span><input value={businessName} onChange={(event) => setBusinessName(event.target.value)} className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none" /></label><label><span className="mb-2 block text-[11px] font-bold uppercase text-[#889890]">{t('Industry')}</span><input value={activityType} onChange={(event) => setActivityType(event.target.value)} className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none" /></label><label><span className="mb-2 block text-[11px] font-bold uppercase text-[#889890]">{t('Country')}</span><input value={country} onChange={(event) => setCountry(event.target.value)} className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none" /></label></div>{state === 'saved' && <div className="mt-5 flex items-center gap-2 rounded-xl bg-[#e5f1e3] px-4 py-3 text-xs font-bold text-[#39745a]"><CheckCircle2 size={15} />{t('Your profile is up to date.')}</div>}</div></SettingsLayout>;
+}
+
+function OnboardingPage() {
+  const { t } = useLanguage();
+  const auth = useAuth();
+  const [, setLocation] = useLocation();
+  const [step, setStep] = useState(1);
+  const [businessName, setBusinessName] = useState(auth.workspace?.workspace.name || '');
   const [activityType, setActivityType] = useState('');
-  const [serviceName, setServiceName] = useState('');
-  const [servicePrice, setServicePrice] = useState('');
-  const [ruleName, setRuleName] = useState('');
-  const [ruleKeywords, setRuleKeywords] = useState('');
-  const [ruleResponse, setRuleResponse] = useState('');
-  const [welcomeMessage, setWelcomeMessage] = useState('');
-  const [instructions, setInstructions] = useState('');
-  const [customerMessage, setCustomerMessage] = useState('');
-  const [businessResponse, setBusinessResponse] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const refresh = async () => {
-    const next = await accountApi<SetupBundle>('/workspace/setup');
-    setData(next);
-    setStep(next.onboarding.completedAt ? 7 : next.onboarding.currentStep);
-    setBusinessName(next.profile?.businessName ?? '');
-    setActivityType(next.profile?.activityType ?? '');
-    setWelcomeMessage(next.assistant?.welcomeMessage ?? '');
-    setInstructions(next.assistant?.businessInstructions ?? '');
-  };
-  useEffect(() => {
-    refresh().catch(() => setLocation('/login'));
-  }, []);
-  const progress = async (nextStep: number) => {
-    await accountApi('/workspace/onboarding', { method: 'PATCH', body: JSON.stringify({ currentStep: nextStep, completedStep: step }) });
-    setStep(nextStep);
-  };
-  const saveStep = async () => {
+  const next = async () => {
     setBusy(true);
-    setError('');
     try {
-      if (step === 1) await accountApi('/workspace/profile', { method: 'PATCH', body: JSON.stringify({ businessName, activityType, description: '', phone: '', email: '', city: '', country: '', workingHours: {}, paymentMethods: [] }) });
-      if (step === 2 && serviceName.trim()) {
-        await accountApi('/workspace/services', { method: 'POST', body: JSON.stringify({ name: serviceName, description: '', price: Number(servicePrice || 0), durationMinutes: 0 }) });
-        setServiceName('');
-        setServicePrice('');
+      if (step === 1) await workspaceApi('/profile', { method: 'PUT', body: JSON.stringify({ businessName, activityType, country: 'United Arab Emirates' }) });
+      if (step < 3) setStep(step + 1);
+      else {
+        await workspaceApi('/onboarding/complete', { method: 'POST' });
+        await auth.refresh();
+        setLocation('/app');
       }
-      if (step === 4 && ruleName.trim() && ruleKeywords.trim() && ruleResponse.trim()) {
-        await accountApi('/workspace/auto-replies', { method: 'POST', body: JSON.stringify({ name: ruleName, keywords: ruleKeywords.split(',').map(value => value.trim()).filter(Boolean), response: ruleResponse, matchType: 'contains', priority: 0, enabled: true }) });
-        setRuleName('');
-        setRuleKeywords('');
-        setRuleResponse('');
-      }
-      if (step === 5) await accountApi('/workspace/assistant', { method: 'PATCH', body: JSON.stringify({ personality: 'PROFESSIONAL', language: 'ar', dialect: 'MODERN_STANDARD_ARABIC', responseStyle: 'SHORT', welcomeMessage, outOfScopeResponse: '', humanHandoffMessage: '', aiFailureMessage: '', businessInstructions: instructions }) });
-      if (step === 6 && customerMessage.trim() && businessResponse.trim()) {
-        await accountApi('/workspace/training', { method: 'POST', body: JSON.stringify({ customerMessage, businessResponse, botNote: '' }) });
-        setCustomerMessage('');
-        setBusinessResponse('');
-      }
-      await progress(Math.min(7, step + 1));
-      await refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'This step could not be saved.');
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
-  const activate = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      await accountApi('/workspace/activate', { method: 'POST', body: '{}' });
-      setLocation('/app');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The workspace could not be activated.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const titles = ['Business information', 'Services', 'WhatsApp Business', 'Auto-replies', 'AI assistant', 'Training examples', 'Review and activation'];
-  if (!data) return <div className="grid min-h-[100dvh] place-items-center bg-[#f6f2e8] text-sm font-bold text-[#557269]">Loading your workspace…</div>;
-  return <div className="grain min-h-[100dvh] bg-[#f6f2e8] px-5 py-8"><div className="mx-auto max-w-3xl"><Brand /><div className="mt-10 rounded-3xl border border-[#e3ddd2] bg-[#fbf9f3] p-6 shadow-[var(--shadow-soft)] md:p-10"><div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">Workspace setup</div><h1 className="mt-2 font-display text-3xl font-extrabold text-[#28574d]">{titles[step - 1]}</h1></div><span className="text-xs font-bold text-[#8a9a92]">Step {step} of 7</span></div><div className="mb-8 grid grid-cols-7 gap-2">{titles.map((_, index) => <div key={index} className={`h-1.5 rounded-full ${index + 1 <= step ? 'bg-[#39745a]' : 'bg-[#e7e2d7]'}`} />)}</div>
-    {step === 1 && <div className="grid gap-4 md:grid-cols-2"><input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="Business name" className="focus-ring rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /><input value={activityType} onChange={event => setActivityType(event.target.value)} placeholder="Business activity" className="focus-ring rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /></div>}
-    {step === 2 && <div><div className="grid gap-3 md:grid-cols-[1fr_160px]"><input value={serviceName} onChange={event => setServiceName(event.target.value)} placeholder="Service name (optional)" className="focus-ring rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /><input value={servicePrice} onChange={event => setServicePrice(event.target.value)} type="number" min="0" placeholder="Price in AED" className="focus-ring rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /></div><div className="mt-4 space-y-2">{data.services.map(item => <div key={item.id} className="flex justify-between rounded-xl bg-[#f4f1e8] px-4 py-3 text-xs font-bold text-[#557269]"><span>{item.name}</span><span>{item.currency} {item.price}</span></div>)}</div></div>}
-    {step === 3 && <div className="rounded-2xl border border-[#d8e3d5] bg-[#eef5e9] p-5"><MessageCircle className="text-[#287550]" /><h2 className="mt-4 font-bold text-[#315f54]">Connect and verify WhatsApp Business</h2><p className="mt-2 text-xs leading-5 text-[#71857b]">Your assistant will remain paused until WhatsApp is connected and verified. Connection is handled securely by FansConnect.</p><Link href="/app/channels" className="mt-5 inline-flex rounded-xl bg-[#235d51] px-4 py-3 text-xs font-bold text-white">Connect WhatsApp</Link></div>}
-    {step === 4 && <div className="space-y-3"><input value={ruleName} onChange={event => setRuleName(event.target.value)} placeholder="Rule name (optional)" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /><input value={ruleKeywords} onChange={event => setRuleKeywords(event.target.value)} placeholder="Keywords, separated by commas" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /><textarea value={ruleResponse} onChange={event => setRuleResponse(event.target.value)} placeholder="Approved response" className="focus-ring min-h-24 w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /></div>}
-    {step === 5 && <div className="space-y-3"><textarea value={welcomeMessage} onChange={event => setWelcomeMessage(event.target.value)} placeholder="Welcome message" className="focus-ring min-h-24 w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /><textarea value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Business instructions and boundaries" className="focus-ring min-h-28 w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /></div>}
-    {step === 6 && <div className="space-y-3"><input value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} placeholder="Example customer message (optional)" className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /><textarea value={businessResponse} onChange={event => setBusinessResponse(event.target.value)} placeholder="Approved business response" className="focus-ring min-h-24 w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3 text-sm outline-none" /><p className="text-xs text-[#82938b]">{data.trainingExamples.length} of 20 examples added</p></div>}
-    {step === 7 && <div className="space-y-3"><div className="rounded-2xl bg-[#f4f1e8] p-5 text-sm text-[#557269]"><div className="font-bold text-[#315f54]">{data.profile?.businessName || 'Business profile incomplete'}</div><div className="mt-2">{data.services.length} services · {data.autoReplies.length} auto-replies · {data.trainingExamples.length} training examples</div><div className="mt-2">WhatsApp: {data.channels.find(channel => channel.type === 'WHATSAPP')?.status === 'CONNECTED' ? 'Connected' : 'Not connected'}</div></div><p className="text-xs leading-5 text-[#82938b]">Activation requires a verified WhatsApp Business connection. No channel will be marked connected until provider verification succeeds.</p></div>}
-    {error && <div className="mt-5 rounded-xl border border-[#e9c5be] bg-[#fdf3f0] px-4 py-3 text-xs font-bold text-[#a25243]">{error}</div>}<div className="mt-8 flex items-center justify-between">{step > 1 ? <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : <span />}{step < 7 ? <Button onClick={() => void saveStep()} disabled={busy || (step === 1 && (!businessName.trim() || !activityType.trim()))}>{busy ? 'Saving…' : 'Save and continue'} <ArrowRight size={15} /></Button> : <Button onClick={() => void activate()} disabled={busy}>{busy ? 'Activating…' : 'Activate workspace'} <ArrowRight size={15} /></Button>}</div></div></div></div>;
+  const title = step === 1 ? 'Tell us about your business.' : step === 2 ? 'Choose your channels.' : 'Your workspace is ready.';
+  return <div className="grain min-h-[100dvh] bg-[#f6f2e8] px-5 py-8"><div className="mx-auto max-w-2xl"><Brand /><div className="mt-12 rounded-3xl border border-[#e3ddd2] bg-[#fbf9f3] p-6 md:p-10"><div className="mb-8 flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#b66c43]">{t('Workspace setup')}</div><h1 className="mt-2 font-display text-3xl font-extrabold text-[#28574d]">{t(title)}</h1></div><span className="whitespace-nowrap text-xs font-bold text-[#8a9a92]">{t('Step')} {step} {t('of')} 3</span></div>{step === 1 && <div className="space-y-4"><input required value={businessName} onChange={(event) => setBusinessName(event.target.value)} placeholder={t('Business name')} className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /><input value={activityType} onChange={(event) => setActivityType(event.target.value)} placeholder={t('Industry')} className="focus-ring w-full rounded-xl border border-[#ded8cb] bg-[#f7f4eb] px-3.5 py-3.5 text-sm outline-none" /></div>}{step === 2 && <div className="grid gap-3 md:grid-cols-2"><div className="rounded-2xl border border-[#b9d8bd] bg-[#e8f2e4] p-5"><MessageCircle size={20} className="text-[#287550]" /><div className="mt-4 text-sm font-bold text-[#315f54]">WhatsApp Business</div><div className="mt-1 text-xs text-[#82938b]">{t('Connect later from Channels')}</div></div><div className="rounded-2xl border border-[#e3ddd2] bg-[#f7f4eb] p-5"><Instagram size={20} className="text-[#a14472]" /><div className="mt-4 text-sm font-bold text-[#315f54]">Instagram</div><div className="mt-1 text-xs text-[#82938b]">{t('Connect later from Channels')}</div></div></div>}{step === 3 && <div className="rounded-2xl bg-[#e8f2e4] p-5 text-sm leading-6 text-[#557269]"><CheckCircle2 className="mb-3 text-[#39745a]" />{t('Your workspace has been created. Connect a channel when you are ready to start receiving conversations.')}</div>}<div className="mt-8 flex justify-end"><Button onClick={() => void next()} disabled={busy || (step === 1 && !businessName.trim())}>{t(step < 3 ? 'Continue' : 'Open workspace')} <ArrowRight size={15} /></Button></div></div></div></div>;
+}
+
+function WorkspaceHomePage() {
+  const { t } = useLanguage();
+  const context = useAuth().workspace;
+  const counts = context?.counts;
+  return <Shell><PageHeading eyebrow="Workspace overview" title="Good morning." description="Real activity from your workspace appears here." /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard label={t('Conversations')} value={String(counts?.conversations || 0)} change="" detail={t('Connect a channel to begin')} icon={MessageSquareText} /><MetricCard label={t('New leads')} value={String(counts?.leads || 0)} change="" detail={t('Connect a channel to begin')} icon={TrendingUp} tone="gold" /><MetricCard label={t('Appointments booked')} value={String(counts?.appointments || 0)} change="" detail={t('Connect a channel to begin')} icon={CalendarCheck2} tone="blue" /><MetricCard label={t('Orders')} value={String(counts?.orders || 0)} change="" detail={t('Connect a channel to begin')} icon={FileText} /></div><div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]"><section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">{t('Your next conversations')}</h2><div className="mt-5 rounded-xl border border-dashed border-[#cfdccf] bg-[#f3f7ee] p-8 text-center"><MessageCircle className="mx-auto text-[#6da883]" size={22} /><p className="mt-3 text-xs font-bold text-[#557269]">{t('Your shared inbox is waiting for a channel')}</p><Link href="/app/channels" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-[#b66c43]">{t('Connect a channel')} <ArrowRight size={13} /></Link></div></section><section className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-5"><div className="text-[10px] font-bold uppercase text-[#628570]">{t('Assistant health')}</div><h2 className="mt-3 font-display text-[20px] font-extrabold text-[#28574d]">{t(context?.assistant?.status || 'PAUSED')}</h2><p className="mt-3 text-xs text-[#658477]">{t('Ready to be trained.')}</p></section></div></Shell>;
+}
+
+function EmptyWorkspacePage({ title, eyebrow, description, countKey, icon: Icon }: { title: string; eyebrow: string; description: string; countKey?: keyof WorkspaceContextData['counts']; icon: React.ElementType }) {
+  const { t } = useLanguage();
+  const context = useAuth().workspace;
+  const count = countKey ? context?.counts[countKey] || 0 : 0;
+  return <Shell><PageHeading eyebrow={eyebrow} title={title} description={description} /><div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center"><Icon size={28} className="mx-auto text-[#7da189]" /><div className="mt-4 font-display text-2xl font-extrabold text-[#315f54]">{count}</div><h2 className="mt-2 font-display text-lg font-extrabold text-[#315f54]">{t('No items yet')}</h2><p className="mt-2 text-xs text-[#71857b]">{t('Real workspace data will appear here after you add it.')}</p></div></Shell>;
+}
+
+function LiveAssistantPage() {
+  const { t } = useLanguage();
+  const status = useAuth().workspace?.assistant?.status || 'PAUSED';
+  return <Shell><PageHeading eyebrow="Automation" title="AI assistant" description="The assistant remains paused until you configure and publish verified workspace settings." /><div className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-6"><Bot size={24} className="text-[#39745a]" /><div className="mt-4 text-xs font-bold uppercase text-[#628570]">{t('Assistant health')}</div><div className="mt-2 font-display text-2xl font-extrabold text-[#28574d]">{t(status)}</div></div></Shell>;
 }
 
 function AdminPage({ section = 'Overview' }: { section?: string }) {
   return <Shell><PageHeading eyebrow="Super admin" title={section} description="Platform-level controls for workspaces, users, billing, and operational settings." action={<Button><Download size={14} />Export</Button>} /><div className="grid gap-4 md:grid-cols-4"><MetricCard label="Workspaces" value="—" change="—" detail="Connect production data" icon={BriefcaseBusiness} /><MetricCard label="Active channels" value="—" change="—" detail="Connect production data" icon={Wifi} tone="blue" /><MetricCard label="Monthly revenue" value="—" change="—" detail="Connect billing data" icon={WalletCards} tone="gold" /><MetricCard label="Open incidents" value="—" change="—" detail="No feed connected" icon={AlertCircle} /></div><div className="mt-5 rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-[#f4e4c6] text-[#98692c]"><Settings2 size={18} /></div><div><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">Production data connection required</h2><p className="mt-1 text-xs leading-5 text-[#82938b]">This admin surface is ready for the Express, Prisma, PostgreSQL, WhatsApp, and Ziina services from the source architecture. It does not claim live operational data until those services are connected.</p></div></div></div></Shell>;
 }
 
-function WorkspaceHomePage() {
-  const [counts, setCounts] = useState<{ conversations: number; contacts: number; leads: number; appointments: number; orders: number } | null>(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    accountApi<{ counts: typeof counts }>('/workspace/dashboard').then(result => setCounts(result.counts)).catch(reason => setError(reason instanceof Error ? reason.message : 'Workspace data is unavailable.'));
-  }, []);
-  return <Shell><PageHeading eyebrow="Workspace overview" title="Good morning." description="See the conversations, contacts, leads, appointments, and orders in your workspace." />{error && <div className="mb-5 rounded-xl border border-[#e9c5be] bg-[#fdf3f0] px-4 py-3 text-xs font-bold text-[#a25243]">{error}</div>}<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"><MetricCard label="Conversations" value={counts ? String(counts.conversations) : '—'} change="" detail="Real workspace total" icon={MessageSquareText} /><MetricCard label="Contacts" value={counts ? String(counts.contacts) : '—'} change="" detail="Real workspace total" icon={Users} tone="blue" /><MetricCard label="New leads" value={counts ? String(counts.leads) : '—'} change="" detail="Real workspace total" icon={TrendingUp} tone="gold" /><MetricCard label="Appointments" value={counts ? String(counts.appointments) : '—'} change="" detail="Real workspace total" icon={CalendarCheck2} /><MetricCard label="Orders" value={counts ? String(counts.orders) : '—'} change="" detail="Real workspace total" icon={FileText} tone="blue" /></div><div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]"><section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">Your next conversations</h2><p className="mt-1 text-[11px] text-[#8a9a92]">Connect WhatsApp or Instagram to see live activity here.</p></div><Inbox size={18} className="text-[#8ba397]" /></div><div className="rounded-xl border border-dashed border-[#cfdccf] bg-[#f3f7ee] p-8 text-center"><MessageCircle className="mx-auto text-[#6da883]" size={22} /><p className="mt-3 text-xs font-bold text-[#557269]">No conversations yet</p><Link href="/app/channels" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-[#b66c43]">Connect a channel <ArrowRight size={13} /></Link></div></section><section className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-5"><div className="mb-4 flex items-center gap-2"><span className="grid size-8 place-items-center rounded-lg bg-[#cae3ca] text-[#2d7054]"><Bot size={15} /></span><span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#628570]">Assistant status</span></div><h2 className="font-display text-[20px] font-extrabold tracking-[-.04em] text-[#28574d]">Paused until verified.</h2><p className="mt-3 text-xs leading-5 text-[#658477]">Add approved training and connect WhatsApp before activating automated replies.</p><Link href="/onboarding" className="mt-5 inline-flex items-center gap-1 text-[11px] font-bold text-[#2d7054]">Continue setup <ArrowUpRight size={13} /></Link></section></div></Shell>;
+function LegacyWorkspaceHomePage() {
+  return <Shell><PageHeading eyebrow="Workspace overview" title="Good morning." description="See the conversations, follow-ups, leads, and appointments that need attention next." action={<Button><Sparkles size={15} />Open daily brief</Button>} /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Conversations" value="—" change="—" detail="Connect a channel to begin" icon={MessageSquareText} /><MetricCard label="Resolved by assistant" value="—" change="—" detail="Available after setup" icon={CheckCircle2} tone="blue" /><MetricCard label="New leads" value="—" change="—" detail="Available after setup" icon={TrendingUp} tone="gold" /><MetricCard label="Appointments booked" value="—" change="—" detail="Available after setup" icon={CalendarCheck2} /></div><div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]"><section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="mb-5 flex items-center justify-between"><div><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">Your next conversations</h2><p className="mt-1 text-[11px] text-[#8a9a92]">Connect WhatsApp or Instagram to see live activity here.</p></div><Inbox size={18} className="text-[#8ba397]" /></div><div className="rounded-xl border border-dashed border-[#cfdccf] bg-[#f3f7ee] p-8 text-center"><MessageCircle className="mx-auto text-[#6da883]" size={22} /><p className="mt-3 text-xs font-bold text-[#557269]">Your shared inbox is waiting for a channel</p><Link href="/app/channels" className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-[#b66c43]">Connect a channel <ArrowRight size={13} /></Link></div></section><section className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-5"><div className="mb-4 flex items-center gap-2"><span className="grid size-8 place-items-center rounded-lg bg-[#cae3ca] text-[#2d7054]"><Bot size={15} /></span><span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#628570]">Assistant health</span></div><h2 className="font-display text-[20px] font-extrabold tracking-[-.04em] text-[#28574d]">Ready to be trained.</h2><p className="mt-3 text-xs leading-5 text-[#658477]">Add approved FAQs, tone guidance, and handoff rules before turning on automated replies.</p><Link href="/app/training" className="mt-5 inline-flex items-center gap-1 text-[11px] font-bold text-[#2d7054]">Open training <ArrowUpRight size={13} /></Link></section></div></Shell>;
 }
 
 function ContactsPageV2() {
@@ -658,13 +929,49 @@ function AnalyticsPageV2() {
   return <Shell><PageHeading eyebrow="Signals & learning" title="Analytics" description="Understand what is working across conversations, channels, leads, and campaigns." action={<Button variant="secondary"><Download size={14} />Download</Button>} /><div className="grid gap-4 md:grid-cols-4"><MetricCard label="Total conversations" value="—" change="—" detail="Connect a channel" icon={MessageSquareText} /><MetricCard label="Resolution rate" value="—" change="—" detail="Available after setup" icon={CheckCircle2} tone="blue" /><MetricCard label="Lead conversion" value="—" change="—" detail="Available after setup" icon={TrendingUp} tone="gold" /><MetricCard label="Avg. response time" value="—" change="—" detail="Available after setup" icon={Clock3} /></div><div className="mt-5 grid gap-5 md:grid-cols-2"><WorkspaceModulePage eyebrow="Analytics" title="Conversation activity" description="Incoming, resolved, and handed-off conversation trends." icon={BarChart3} items={[{ name: 'Channel mix', detail: 'WhatsApp and Instagram comparisons will appear after connection.', status: 'Ready' }, { name: 'Top intents', detail: 'See what customers are trying to do in each conversation.', status: 'Ready' }]} /><WorkspaceModulePage eyebrow="Analytics" title="Growth signals" description="Track campaigns, lead stages, and attributed appointments." icon={TrendingUp} items={[{ name: 'Lead funnel', detail: 'Measure movement from first message to qualified lead.', status: 'Ready' }, { name: 'Campaign performance', detail: 'Compare reach, replies, and outcomes across campaigns.', status: 'Ready' }]} /></div></Shell>;
 }
 
-function Router() {
+function LegacyRouter() {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={PublicMarketingPage} /><Route path="/features" component={() => <PublicInfoPage type="features" />} /><Route path="/pricing" component={() => <PublicInfoPage type="pricing" />} /><Route path="/faq" component={() => <PublicInfoPage type="faq" />} /><Route path="/contact" component={() => <PublicInfoPage type="contact" />} /><Route path="/login" component={() => <AuthPageV2 />} /><Route path="/register" component={() => <AuthPageV2 register />} /><Route path="/forgot-password" component={() => <AuthPageV2 />} /><Route path="/reset-password" component={() => <AuthPageV2 />} /><Route path="/verify-email" component={() => <AuthPageV2 />} /><Route path="/onboarding" component={OnboardingPage} /><Route path="/app" component={Overview} /><Route path="/app/inbox" component={InboxPage} /><Route path="/app/contacts" component={ContactsPage} /><Route path="/app/leads" component={LeadsPage} /><Route path="/app/appointments" component={AppointmentsPage} /><Route path="/app/ai-assistant" component={AIAssistantPageV2} /><Route path="/app/flows" component={FlowsPage} /><Route path="/app/analytics" component={AnalyticsPage} /><Route path="/app/campaigns" component={() => <WorkspaceModulePage eyebrow="Campaigns" title="Campaigns" description="Plan, send, and measure customer campaigns across your connected channels." icon={Send} action="Create campaign" items={[{ name: 'Campaign workspace', detail: 'Campaign drafts and delivery metrics will appear here once a channel is connected.', status: 'Draft' }, { name: 'Audience segments', detail: 'Build reusable audiences from contacts, leads, and conversation activity.', status: 'Ready' }, { name: 'Templates', detail: 'Manage message templates and keep outbound communication consistent.', status: 'Ready' }]} />} /><Route path="/app/training" component={() => <WorkspaceModulePage eyebrow="AI training" title="Training" description="Give the assistant approved knowledge, FAQs, and tone guidance before you publish." icon={BookOpen} action="Add source" items={[{ name: 'FAQ library', detail: 'Add approved answers for common customer questions.', status: 'Ready' }, { name: 'Knowledge sources', detail: 'Organise service details, policies, and product information.', status: 'Ready' }, { name: 'Reply examples', detail: 'Teach the tone and language your team wants to use.', status: 'Ready' }]} />} /><Route path="/app/business-profile" component={BusinessProfilePageV2} /><Route path="/app/channels" component={ChannelsPageV2} /><Route path="/app/orders" component={() => <WorkspaceModulePage eyebrow="Commerce" title="Orders" description="Keep order requests, status updates, and customer conversations connected." icon={FileText} action="Add order" items={[{ name: 'Order workspace', detail: 'Orders will appear here when your catalogue and connected channels are active.', status: 'Ready' }, { name: 'Statuses', detail: 'Configure the order states your team uses from enquiry to fulfilment.', status: 'Ready' }, { name: 'Customer updates', detail: 'Prepare clear updates for order confirmations and delivery moments.', status: 'Ready' }]} />} /><Route path="/app/catalog" component={() => <WorkspaceModulePage eyebrow="Commerce" title="Catalog" description="Create a simple catalogue your team and assistant can use in conversations." icon={Store} action="Add item" items={[{ name: 'Products and services', detail: 'Add names, prices in AED, availability, and helpful descriptions.', status: 'Ready' }, { name: 'Collections', detail: 'Organise your offering so customers can browse what fits them.', status: 'Ready' }, { name: 'Availability rules', detail: 'Keep the assistant from promising what your team cannot fulfil.', status: 'Ready' }]} />} /><Route path="/app/settings" component={SettingsPageV2} /><Route path="/app/billing" component={BillingPageV2} /><Route path="/app/bot-settings" component={AIAssistantPageV2} /><Route path="/app/business-settings" component={BusinessProfilePageV2} /><Route path="/app/whatsapp-settings" component={ChannelsPageV2} /><Route path="/admin" component={() => <AdminPage />} /><Route path="/admin/users" component={() => <AdminPage section="Users" />} /><Route path="/admin/workspaces" component={() => <AdminPage section="Workspaces" />} /><Route path="/admin/billing" component={() => <AdminPage section="Billing" />} /><Route path="/admin/settings" component={() => <AdminPage section="Settings" />} /><Route component={NotFound} /></Switch></ErrorBoundary>;
 }
 
+function Router() {
+  const [location] = useLocation();
+  const protect = (node: React.ReactNode) => <ProtectedRoute>{node}</ProtectedRoute>;
+  return <ErrorBoundary resetKey={location}><Switch>
+    <Route path="/" component={PublicMarketingPage} />
+    <Route path="/features" component={() => <PublicInfoPage type="features" />} />
+    <Route path="/pricing" component={() => <PublicInfoPage type="pricing" />} />
+    <Route path="/faq" component={() => <PublicInfoPage type="faq" />} />
+    <Route path="/contact" component={() => <PublicInfoPage type="contact" />} />
+    <Route path="/login" component={() => <AuthPageV2 mode="login" />} />
+    <Route path="/register" component={() => <AuthPageV2 mode="register" />} />
+    <Route path="/forgot-password" component={() => <AuthPageV2 mode="forgot" />} />
+    <Route path="/reset-password" component={() => <AuthPageV2 mode="reset" />} />
+    <Route path="/verify-email" component={() => <AuthPageV2 mode="verify" />} />
+    <Route path="/onboarding" component={() => protect(<OnboardingPage />)} />
+    <Route path="/app" component={() => protect(<WorkspaceHomePage />)} />
+    <Route path="/app/inbox" component={() => protect(<InboxPage />)} />
+    <Route path="/app/contacts" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace" title="Contacts" description="Real contacts from your workspace." countKey="contacts" icon={Users} />)} />
+    <Route path="/app/leads" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace" title="Leads" description="Real leads from your workspace." countKey="leads" icon={TrendingUp} />)} />
+    <Route path="/app/appointments" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace" title="Appointments" description="Real appointments from your workspace." countKey="appointments" icon={CalendarDays} />)} />
+    <Route path="/app/ai-assistant" component={() => protect(<LiveAssistantPage />)} />
+    <Route path="/app/faq" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="FAQ & auto-replies" description="Approved FAQs and automatic replies from your workspace." countKey="faq" icon={CircleHelp} />)} />
+    <Route path="/app/training" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Training" description="Real training examples from your workspace." countKey="trainingExamples" icon={BookOpen} />)} />
+    <Route path="/app/flows" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Flows" description="Published automation flows from your workspace." icon={Workflow} />)} />
+    <Route path="/app/analytics" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Analytics" description="Analytics appear after real workspace activity." countKey="conversations" icon={BarChart3} />)} />
+    <Route path="/app/campaigns" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Campaigns" description="Real campaigns from your workspace." icon={Send} />)} />
+    <Route path="/app/business-profile" component={() => protect(<BusinessProfilePageV2 />)} />
+    <Route path="/app/channels" component={() => protect(<ChannelsPageV2 />)} />
+    <Route path="/app/orders" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace settings" title="Orders" description="Real orders from your workspace." countKey="orders" icon={FileText} />)} />
+    <Route path="/app/catalog" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace settings" title="Catalog" description="Real catalog items from your workspace." icon={Store} />)} />
+    <Route path="/app/settings" component={() => protect(<SettingsPageV2 />)} />
+    <Route path="/app/billing" component={() => protect(<BillingPageV2 />)} />
+    <Route component={NotFound} />
+  </Switch></ErrorBoundary>;
+}
+
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><LanguageRuntime /><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><LanguageRuntime><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><AuthRuntime><Router /></AuthRuntime></WouterRouter></LanguageRuntime><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;

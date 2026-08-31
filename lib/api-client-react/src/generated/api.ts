@@ -96,6 +96,8 @@ export const getHealthCheckQueryKey = () => {
     `/api/healthz`
     ] as const;
     }
+
+
 export const getHealthCheckQueryOptions = <TData = Awaited<ReturnType<typeof healthCheck>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof healthCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -227,6 +229,7 @@ export const getListWorkspaceChannelsUrl = (workspaceId: string,) => {
 }
 
 /**
+ * Returns the persisted provider connection state for this workspace. Provider access tokens are never included.
  * @summary List channel connection state
  */
 export const listWorkspaceChannels = async (workspaceId: string, options?: Parameters<typeof customFetch>[1]): Promise<ListWorkspaceChannels200> => {
@@ -638,6 +641,7 @@ export const getListWorkspaceConversationsUrl = (workspaceId: string,
 }
 
 /**
+ * Returns persisted conversation history and message delivery state for this workspace.
  * @summary List real inbox conversations
  */
 export const listWorkspaceConversations = async (workspaceId: string,

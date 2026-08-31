@@ -7,8 +7,8 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "build:test": "esbuild test/channels.test.ts --bundle --packages=external --platform=node --format=esm --outfile=tmp/channels.test.mjs --sourcemap",
-    "test": "pnpm run build:test && node --test tmp/channels.test.mjs",
+    "build:test": "esbuild test/channels.test.ts --bundle --alias:@workspace/db=../../lib/db/src/index.ts --platform=node --format=cjs --external:pg-native --outfile=tmp/channels.test.cjs --sourcemap",
+    "test": "pnpm run build:test && node --test tmp/channels.test.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
