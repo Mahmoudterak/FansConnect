@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { gupshupWebhookHandler } from "./routes/channels";
 
 const app: Express = express();
 
@@ -74,6 +75,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
+app.post("/webhook/gupshup", gupshupWebhookHandler);
 app.use("/api", router);
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error({ err: error }, "Unhandled API request error");

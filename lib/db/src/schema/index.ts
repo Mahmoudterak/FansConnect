@@ -205,7 +205,10 @@ export const contacts = pgTable("contacts", {
   phone: text("phone").notNull().default(""),
   email: text("email").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [index("contacts_workspace_idx").on(table.workspaceId)]);
+}, (table) => [
+  index("contacts_workspace_idx").on(table.workspaceId),
+  uniqueIndex("contacts_workspace_phone_unique").on(table.workspaceId, table.phone),
+]);
 
 export const conversations = pgTable("conversations", {
   id: uuid("id").defaultRandom().primaryKey(),

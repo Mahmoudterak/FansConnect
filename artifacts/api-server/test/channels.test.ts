@@ -4,7 +4,7 @@ import { request as httpRequest, type IncomingMessage, type Server } from "node:
 import { after, before, beforeEach, describe, it } from "node:test";
 import express, { type Request } from "express";
 import { inArray } from "drizzle-orm";
-import { db, workspaces } from "@workspace/db";
+import { autoReplyRules, channels, contacts, db, faqItems, workspaces } from "@workspace/db";
 import channelsRouter from "../src/routes/channels";
 
 type Json = Record<string, unknown>;
@@ -22,6 +22,7 @@ const metaEnvKeys = [
   "META_GRAPH_URL",
   "META_WEBHOOK_VERIFY_TOKEN",
   "META_WHATSAPP_PHONE_NUMBER_ID",
+  "gupshupAPPKAY",
 ];
 
 let server: Server;
@@ -126,7 +127,16 @@ function signedWebhook(path: string, payload: Json, extraHeaders: Record<string,
 }
 
 async function beginConnect(workspaceId: string, channel: "whatsapp" | "instagram") {
-  await ensureWorkspace(workspaceId);
+  const id = await ensureWorkspace(workspaceId);
+  await db.insert(channels).values({
+    workspaceId: id,
+    type: channel.toUpperCase(),
+    provider: "META",
+    status: "NOT_CONNECTED",
+  }).onConflictDoUpdate({
+    target: [channels.workspaceId, channels.type],
+    set: { provider: "META", status: "NOT_CONNECTED", providerData: {} },
+  });
   const response = await request(`/api/workspaces/${workspaceId}/channels/${channel}/connect`, {
     method: "POST",
     body: {},
@@ -241,6 +251,7 @@ before(async () => {
   process.env.META_REDIRECT_URI = "https://example.test/api/oauth/meta/callback";
   process.env.META_GRAPH_URL = "https://meta.test/v21.0";
   process.env.META_WEBHOOK_VERIFY_TOKEN = "test-webhook-token";
+  process.env.gupshupAPPKAY = "test-gupshup-key";
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -294,7 +305,7 @@ describe("Meta channel connection safety", () => {
     });
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
-    assert.match(String(response.json.message), /Invalid provider authorization state/);
+    assert.equal(response.json.message, "Unable to connect WhatsApp right now. Please try again later.");
     assert.equal((response.json.channel as Json).status, "failed");
   });
 
@@ -312,7 +323,7 @@ describe("Meta channel connection safety", () => {
     assert.equal(response.status, 502);
     assert.equal(response.json.error, "provider_verification_failed");
     assert.equal((response.json.channel as Json).status, "failed");
-    assert.equal((response.json.channel as Json).failureReason, "Token was rejected by Meta");
+    assert.equal((response.json.channel as Json).failureReason, "Unable to use this channel right now.");
   });
 
   it("allows only an owner to disconnect a channel and clears its credentials", async () => {
@@ -425,7 +436,7 @@ describe("Meta webhook ingestion", () => {
     const channel = (channels.json.channels as Json[]).find((item) => item.channel === "whatsapp") as Json;
     assert.equal(channel.status, "failed");
     assert.equal(channel.failureCode, "provider_delivery_failed");
-    assert.equal(channel.failureReason, "Recipient blocked messages");
+    assert.equal(channel.failureReason, "Unable to use this channel right now.");
 
     const blocked = await request(`/api/workspaces/delivery-failure/conversations/${conversationId}/replies`, {
       method: "POST",
@@ -487,5 +498,161 @@ describe("Meta webhook ingestion", () => {
     assert.equal(crossWorkspace.json.error, "workspace_channel_mismatch");
     const afterCrossWorkspace = await request("/api/workspaces/isolation-b/conversations");
     assert.equal((afterCrossWorkspace.json.conversations as Json[]).length, 0);
+  });
+});
+
+describe("Gupshup WhatsApp provider", () => {
+  it("verifies the app, resolves the tenant, sends a persisted FAQ reply, and suppresses duplicates", async () => {
+    const workspaceId = await ensureWorkspace("gupshup-faq");
+    await db.insert(channels).values({
+      workspaceId,
+      type: "WHATSAPP",
+      provider: "GUPSHUP",
+      status: "NOT_CONNECTED",
+    }).onConflictDoUpdate({
+      target: [channels.workspaceId, channels.type],
+      set: { provider: "GUPSHUP", status: "NOT_CONNECTED", providerData: {} },
+    });
+    await db.insert(faqItems).values({
+      workspaceId,
+      question: "كم سعر تنظيف الأسنان؟",
+      answer: "تنظيف وتلميع الأسنان بسعر 199 درهم.",
+      enabled: true,
+      priority: 100,
+    });
+    await db.insert(autoReplyRules).values({
+      workspaceId,
+      name: "Appointment request",
+      keywords: ["موعد"],
+      response: "أرسل لنا الوقت المناسب وسيتابع الفريق معك.",
+      enabled: true,
+      priority: 90,
+    });
+
+    let outboundCalls = 0;
+    (globalThis as { fetch: typeof fetch }).fetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(init?.headers && new Headers(init.headers).get("apikey"), "test-gupshup-key");
+      if (url.pathname === "/wa/app/gupshup-app-id/business") {
+        return jsonResponse({
+          status: "success",
+          business: { id: "gupshup-app-id", name: "FansConnect Test" },
+        });
+      }
+      if (url.pathname === "/sm/api/v1/msg") {
+        outboundCalls += 1;
+        assert.match(String(init?.headers && new Headers(init.headers).get("content-type")), /application\/x-www-form-urlencoded/);
+        const form = new URLSearchParams(String(init?.body));
+        assert.equal(form.get("channel"), "whatsapp");
+        assert.equal(form.get("source"), "971500000010");
+        assert.equal(form.get("destination"), "971500000011");
+        assert.equal(form.get("src.name"), "fansconnect-test");
+        assert.deepEqual(JSON.parse(String(form.get("message"))), {
+          type: "text",
+          text: outboundCalls === 1
+            ? "تنظيف وتلميع الأسنان بسعر 199 درهم."
+            : "أرسل لنا الوقت المناسب وسيتابع الفريق معك.",
+        });
+        return jsonResponse({ status: "submitted", messageId: `gupshup-outbound-${outboundCalls}` });
+      }
+      throw new Error(`Unexpected Gupshup request: ${url}`);
+    };
+
+    const connected = await request("/api/workspaces/gupshup-faq/channels/whatsapp/connect", {
+      method: "POST",
+      body: {
+        appId: "gupshup-app-id",
+        appName: "fansconnect-test",
+        source: "+971 50 000 0010",
+      },
+    });
+    assert.equal(connected.status, 200, JSON.stringify(connected.json));
+    assert.equal((connected.json.channel as Json).provider, "Gupshup");
+    assert.equal((connected.json.channel as Json).status, "connected");
+    assert.equal(JSON.stringify(connected.json).includes("test-gupshup-key"), false);
+
+    const webhookPayload: Json = {
+      app: "fansconnect-test",
+      timestamp: 1788180000000,
+      version: 2,
+      type: "message",
+      payload: {
+        id: "gupshup-inbound-1",
+        source: "971500000011",
+        type: "text",
+        payload: { text: "كم سعر تنظيف الأسنان؟" },
+        sender: { phone: "971500000011", name: "محمد" },
+      },
+      tenantId: "must-not-be-trusted",
+    };
+    const first = await request("/api/webhook/gupshup", {
+      method: "POST",
+      body: webhookPayload,
+    });
+    assert.equal(first.status, 202, JSON.stringify(first.json));
+    assert.equal(first.json.automatedReplies, 1);
+    assert.equal(first.json.duplicates, 0);
+
+    const duplicate = await request("/api/webhook/gupshup", {
+      method: "POST",
+      body: webhookPayload,
+    });
+    assert.equal(duplicate.status, 202);
+    assert.equal(duplicate.json.automatedReplies, 0);
+    assert.equal(duplicate.json.duplicates, 1);
+    assert.equal(outboundCalls, 1);
+
+    const autoReply = await request("/api/webhook/gupshup", {
+      method: "POST",
+      body: {
+        ...webhookPayload,
+        payload: {
+          ...(webhookPayload.payload as Json),
+          id: "gupshup-inbound-2",
+          payload: { text: "أريد موعد" },
+        },
+      },
+    });
+    assert.equal(autoReply.status, 202);
+    assert.equal(autoReply.json.automatedReplies, 1, JSON.stringify(autoReply.json));
+    assert.equal(outboundCalls, 2);
+
+    const inbox = await request("/api/workspaces/gupshup-faq/conversations?channel=whatsapp");
+    const conversation = (inbox.json.conversations as Json[])[0];
+    assert.equal((inbox.json.conversations as Json[]).length, 1);
+    assert.equal(conversation.contactName, "محمد");
+    assert.equal((conversation.messages as Json[]).length, 4);
+    assert.deepEqual(
+      new Set((conversation.messages as Json[]).map((message) => message.providerMessageId)),
+      new Set(["gupshup-inbound-1", "gupshup-outbound-1", "gupshup-inbound-2", "gupshup-outbound-2"]),
+    );
+    const storedContacts = await db.select().from(contacts).where(inArray(contacts.workspaceId, [workspaceId]));
+    assert.equal(storedContacts.length, 1);
+    assert.equal(storedContacts[0].name, "محمد");
+  });
+
+  it("returns a generic customer-safe error when platform authentication is unavailable", async () => {
+    await ensureWorkspace("gupshup-missing-key");
+    const workspaceId = workspaceIds.get("gupshup-missing-key")!;
+    await db.insert(channels).values({
+      workspaceId,
+      type: "WHATSAPP",
+      provider: "GUPSHUP",
+      status: "NOT_CONNECTED",
+    }).onConflictDoUpdate({
+      target: [channels.workspaceId, channels.type],
+      set: { provider: "GUPSHUP", status: "NOT_CONNECTED", providerData: {} },
+    });
+    const configured = process.env.gupshupAPPKAY;
+    delete process.env.gupshupAPPKAY;
+    const response = await request("/api/workspaces/gupshup-missing-key/channels/whatsapp/connect", {
+      method: "POST",
+      body: { appId: "app-id", appName: "app-name", source: "971500000010" },
+    });
+    process.env.gupshupAPPKAY = configured;
+    assert.equal(response.status, 503);
+    assert.equal(response.json.error, "channel_connection_unavailable");
+    assert.equal(JSON.stringify(response.json).includes("gupshupAPPKAY"), false);
+    assert.equal(JSON.stringify(response.json).includes("API"), false);
   });
 });

@@ -22,7 +22,8 @@ type Conversation = { id: number; contactName: string; avatar: string; channel: 
 type LiveChannel = {
   channel: 'whatsapp' | 'instagram';
   name: string;
-  status: 'setup_required' | 'connecting' | 'connected' | 'degraded' | 'failed' | 'disconnected';
+  provider: string;
+  status: 'setup_required' | 'connecting' | 'connected' | 'degraded' | 'failed' | 'paused' | 'disconnected';
   verified: boolean;
   displayName: string | null;
   lastVerifiedAt: string | null;
@@ -100,12 +101,15 @@ const ar: Record<string, string> = {
   'Hand off to team': 'تحويل إلى الفريق',
   'Write a reply in English or العربية...': 'اكتب ردًا بالعربية أو الإنجليزية...',
   'Messages are sent only after the provider accepts them.': 'لا يتم إرسال الرسائل إلا بعد قبول مزود الخدمة لها.',
-  'Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.': 'اربط WhatsApp Business وInstagram بعد التحقق الفعلي من بيانات مزود الخدمة.',
+  'Connect WhatsApp Business through Gupshup. A channel is marked connected only after provider verification.': 'اربط WhatsApp Business عبر Gupshup. لن تظهر القناة كمتصلة إلا بعد التحقق الفعلي من المزود.',
   'Checking provider state…': 'جارٍ التحقق من حالة مزود الخدمة…',
   'Connected': 'متصل',
   'Authorization in progress': 'جارٍ التفويض',
   'Verification failed': 'فشل التحقق',
   'Disconnected': 'غير متصل',
+  'Not connected': 'غير متصل',
+  'Error': 'خطأ',
+  'Paused': 'متوقف مؤقتًا',
   'Setup required': 'غير متصل',
   'Verified': 'تم التحقق',
   'Connecting': 'جارٍ الربط',
@@ -115,6 +119,10 @@ const ar: Record<string, string> = {
   'Checking…': 'جارٍ التحقق…',
   'Try again': 'إعادة المحاولة',
   'Connect': 'ربط',
+  'WhatsApp app ID': 'معرّف تطبيق WhatsApp',
+  'WhatsApp app name': 'اسم تطبيق WhatsApp',
+  'WhatsApp business number': 'رقم WhatsApp للأعمال',
+  'These details identify your WhatsApp app. Your provider key stays private on the server.': 'تُستخدم هذه البيانات لتحديد تطبيق WhatsApp الخاص بك. يبقى مفتاح المزود محفوظًا بشكل خاص على الخادم.',
   'Retry': 'إعادة المحاولة',
   'Could not connect to the server.': 'تعذر الاتصال بالخادم.',
   'Workspace overview': 'نظرة عامة على مساحة العمل',
@@ -527,6 +535,8 @@ function ChannelsPageV2() {
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState('');
+  const [gupshup, setGupshup] = useState({ appId: '', appName: '', source: '' });
   const load = useCallback(async () => {
     setState('loading');
     try {
@@ -538,11 +548,21 @@ function ChannelsPageV2() {
   useEffect(() => { void load(); }, [load]);
   const connect = async (channel: LiveChannel['channel']) => {
     setBusy(channel);
+    setNotice('');
     try {
-      const result = await workspaceApi<{ connectUrl: string | null }>(`/channels/${channel}/connect`, { method: 'POST', body: '{}' });
+      const result = await workspaceApi<{ connectUrl: string | null; message: string }>(
+        `/channels/${channel}/connect`,
+        {
+          method: 'POST',
+          body: JSON.stringify(channel === 'whatsapp' ? gupshup : {}),
+        },
+      );
+      setNotice(result.message);
       if (result.connectUrl) window.location.assign(result.connectUrl);
       else await load();
-    } catch { setState('error'); }
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Unable to connect WhatsApp right now. Please try again later.');
+    }
     finally { setBusy(''); }
   };
   const disconnect = async (channel: LiveChannel['channel']) => {
@@ -551,7 +571,27 @@ function ChannelsPageV2() {
     catch { setState('error'); }
     finally { setBusy(''); }
   };
-  return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.">{state === 'loading' ? <div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Checking provider state…')}</div> : state === 'error' ? <div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => { const connected = item.status === 'connected' && item.verified; const status = connected ? 'Connected' : item.status === 'connecting' ? 'Authorization in progress' : item.status === 'failed' ? 'Verification failed' : 'Disconnected'; return <article key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}</h2><p className="mt-1 text-[11px] text-[#82938b]">{t(status)}</p></div></div><Badge tone={connected ? 'green' : item.status === 'failed' ? 'red' : 'gold'}>{t(connected ? 'Verified' : 'Not ready')}</Badge></div>{item.failureReason && <p className="mt-4 text-xs font-bold text-[#a25243]">{item.failureReason}</p>}<div className="mt-5">{connected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{t('Disconnect')}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel}>{busy === item.channel ? t('Checking…') : `${t('Connect')} ${item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}`} <Link2 size={14} /></Button>}</div></article>; })}</div>}</SettingsLayout>;
+  return <SettingsLayout title="Channels" description="Connect WhatsApp Business through Gupshup. A channel is marked connected only after provider verification.">
+    {notice && <div data-testid="channel-notice" className="mb-5 rounded-xl border border-[#d9e6d6] bg-[#e8f2e4] px-4 py-3 text-xs font-bold text-[#39745a]">{t(notice)}</div>}
+    {state === 'loading' ? <div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Checking provider state…')}</div> : state === 'error' ? <div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => {
+      const connected = item.status === 'connected' && item.verified;
+      const status = connected ? 'Connected' : item.status === 'connecting' ? 'Connecting' : item.status === 'failed' ? 'Error' : item.status === 'paused' ? 'Paused' : 'Not connected';
+      const isGupshup = item.channel === 'whatsapp' && item.provider === 'Gupshup';
+      return <article data-testid={`card-channel-${item.channel}`} key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{item.channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram'}</h2><p className="mt-1 text-[11px] text-[#82938b]">{item.provider}</p></div></div>
+          <Badge tone={connected ? 'green' : item.status === 'failed' ? 'red' : 'gold'}>{t(status)}</Badge>
+        </div>
+        {isGupshup && !connected && <div className="mt-5 space-y-3 rounded-xl bg-[#f4f1e8] p-4">
+          <input aria-label={t('WhatsApp app ID')} value={gupshup.appId} onChange={(event) => setGupshup((value) => ({ ...value, appId: event.target.value }))} placeholder={t('WhatsApp app ID')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
+          <input aria-label={t('WhatsApp app name')} value={gupshup.appName} onChange={(event) => setGupshup((value) => ({ ...value, appName: event.target.value }))} placeholder={t('WhatsApp app name')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
+          <input aria-label={t('WhatsApp business number')} inputMode="tel" value={gupshup.source} onChange={(event) => setGupshup((value) => ({ ...value, source: event.target.value }))} placeholder={t('WhatsApp business number')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
+          <p className="text-[10px] leading-4 text-[#7c8d85]">{t('These details identify your WhatsApp app. Your provider key stays private on the server.')}</p>
+        </div>}
+        <div className="mt-5">{connected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{t('Disconnect')}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || (isGupshup && (!gupshup.appId.trim() || !gupshup.appName.trim() || !gupshup.source.trim()))}>{busy === item.channel ? t('Checking…') : `${t('Connect')} ${item.channel === 'whatsapp' ? 'WhatsApp' : 'Instagram'}`} <Link2 size={14} /></Button>}</div>
+      </article>;
+    })}</div>}
+  </SettingsLayout>;
 }
 
 function ContactsPage() {

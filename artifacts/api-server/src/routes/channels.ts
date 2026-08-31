@@ -1,8 +1,25 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
-import { channels, conversations, db, messages } from "@workspace/db";
+import {
+  autoReplyRules,
+  channels,
+  contacts,
+  conversations,
+  db,
+  faqItems,
+  messages,
+} from "@workspace/db";
 import { getAuth } from "../lib/auth";
+import {
+  gupshupAppName,
+  gupshupIsConfigured,
+  normalizeGupshupPayload,
+  parseGupshupChannelData,
+  sendGupshupText,
+  verifyGupshupChannel,
+  type GupshupChannelData,
+} from "../providers/gupshup";
 
 type ChannelName = "whatsapp" | "instagram";
 type ChannelStatus =
@@ -11,13 +28,17 @@ type ChannelStatus =
   | "connected"
   | "degraded"
   | "failed"
+  | "paused"
   | "disconnected";
 type MessageFrom = "customer" | "team" | "assistant";
 type DeliveryStatus = "queued" | "sent" | "delivered" | "read" | "failed";
+type ChannelProvider = "GUPSHUP" | "META" | "SENDS_BOT";
 
 type ChannelRecord = {
   id: string;
   channel: ChannelName;
+  provider: ChannelProvider;
+  providerData: Record<string, unknown>;
   status: ChannelStatus;
   providerAccountId?: string;
   displayName?: string;
@@ -52,6 +73,8 @@ type ConversationRecord = {
 };
 
 const router: IRouter = Router();
+const CUSTOMER_CONNECTION_ERROR = "Unable to connect WhatsApp right now. Please try again later.";
+const CUSTOMER_SEND_ERROR = "The message could not be sent right now. Please try again later.";
 
 const channelLabels: Record<ChannelName, string> = {
   whatsapp: "WhatsApp Business",
@@ -82,13 +105,17 @@ function normalizeStatus(value: string): ChannelStatus {
     case "degraded":
       return "degraded";
     case "failed":
+    case "error":
       return "failed";
+    case "paused":
+      return "paused";
     case "disconnected":
       return "disconnected";
     case "not_connected":
+      return "disconnected";
     case "setup_required":
     default:
-      return value.toLowerCase() === "disconnected" ? "disconnected" : "setup_required";
+      return value.toLowerCase() === "setup_required" ? "setup_required" : "disconnected";
   }
 }
 
@@ -100,6 +127,11 @@ function channelFromRow(row: typeof channels.$inferSelect): ChannelRecord {
   return {
     id: row.id,
     channel,
+    provider: (row.provider || (channel === "whatsapp" ? "GUPSHUP" : "META")).toUpperCase() as ChannelProvider,
+    providerData:
+      row.providerData && typeof row.providerData === "object"
+        ? row.providerData as Record<string, unknown>
+        : {},
     status: credentialsUnavailable ? "failed" : normalizeStatus(row.status),
     providerAccountId: row.providerAccountId || undefined,
     displayName: row.displayName || undefined,
@@ -118,7 +150,7 @@ async function workspaceChannels(workspaceId: string): Promise<ChannelRecord[]> 
   await db
     .insert(channels)
     .values([
-      { workspaceId, type: "WHATSAPP", provider: "META", status: "NOT_CONNECTED" },
+      { workspaceId, type: "WHATSAPP", provider: "GUPSHUP", status: "NOT_CONNECTED" },
       { workspaceId, type: "INSTAGRAM", provider: "META", status: "NOT_CONNECTED" },
     ])
     .onConflictDoNothing({ target: [channels.workspaceId, channels.type] });
@@ -135,7 +167,11 @@ async function channelOr404(workspaceId: string, channelValue: string): Promise<
 
 async function verifiedChannel(workspaceId: string, channelValue: string): Promise<ChannelRecord | null> {
   const channel = await channelOr404(workspaceId, channelValue);
-  if (!channel || channel.status !== "connected" || !channel.accessToken) return null;
+  if (!channel || channel.status !== "connected") return null;
+  if (channel.provider === "GUPSHUP") {
+    return gupshupIsConfigured() && parseGupshupChannelData(channel.providerData) ? channel : null;
+  }
+  if (!channel.accessToken) return null;
   return channel;
 }
 
@@ -144,7 +180,7 @@ function healthFor(record: ChannelRecord) {
     return {
       state: "healthy",
       verified: true,
-      message: "Provider credentials verified and webhooks are ready.",
+      message: "The channel is verified and ready for messages.",
       action: null,
     };
   }
@@ -152,16 +188,16 @@ function healthFor(record: ChannelRecord) {
     return {
       state: "failed",
       verified: false,
-      message: record.failureReason || "Provider verification failed.",
-      action: "Reconnect and verify the provider credentials.",
+      message: "Unable to use this channel right now.",
+      action: "Try connecting again later.",
     };
   }
   if (record.status === "connecting") {
     return {
       state: "connecting",
       verified: false,
-      message: "Waiting for provider authorization to finish.",
-      action: "Complete authorization in the provider window.",
+      message: "The connection is being verified.",
+      action: "Please wait for verification to finish.",
     };
   }
   if (record.status === "disconnected") {
@@ -172,11 +208,19 @@ function healthFor(record: ChannelRecord) {
       action: "Connect the provider to receive and send messages.",
     };
   }
+  if (record.status === "paused") {
+    return {
+      state: "paused",
+      verified: false,
+      message: "This channel is paused.",
+      action: "Reconnect the channel when you are ready.",
+    };
+  }
   return {
     state: "setup_required",
     verified: false,
-    message: "Provider setup is required before this channel can receive messages.",
-    action: "Configure Meta provider credentials, then connect this channel.",
+    message: "This channel is not connected.",
+    action: "Connect the channel to receive and send messages.",
   };
 }
 
@@ -184,13 +228,18 @@ function serializeChannel(record: ChannelRecord) {
   return {
     channel: record.channel,
     name: channelLabels[record.channel],
+    provider: record.provider === "GUPSHUP"
+      ? "Gupshup"
+      : record.provider === "SENDS_BOT"
+        ? "Sends Bot"
+        : "WhatsApp Cloud API",
     status: record.status,
     verified: record.status === "connected",
     providerAccountId: record.providerAccountId || null,
     displayName: record.displayName || null,
     connectedAt: record.connectedAt || null,
     lastVerifiedAt: record.lastVerifiedAt || null,
-    failureReason: record.failureReason || null,
+    failureReason: record.status === "failed" ? "Unable to use this channel right now." : null,
     failureCode: record.failureCode || null,
     health: healthFor(record),
   };
@@ -230,10 +279,18 @@ function decryptAccessToken(value: string): string | undefined {
 }
 
 async function persistChannel(workspaceId: string, record: ChannelRecord) {
+  const persistedStatus =
+    record.status === "connected" ? "CONNECTED" :
+    record.status === "connecting" ? "CONNECTING" :
+    record.status === "paused" ? "PAUSED" :
+    record.status === "failed" || record.status === "degraded" ? "ERROR" :
+    "NOT_CONNECTED";
   await db
     .update(channels)
     .set({
-      status: record.status,
+      status: persistedStatus,
+      provider: record.provider,
+      providerData: record.providerData,
       providerAccountId: record.providerAccountId || null,
       displayName: record.displayName || null,
       accessTokenEncrypted: record.accessToken ? encryptAccessToken(record.accessToken) : null,
@@ -377,6 +434,65 @@ async function connectChannel(workspaceId: string, record: ChannelRecord, code?:
   };
 }
 
+async function connectGupshupChannel(
+  workspaceId: string,
+  record: ChannelRecord,
+  input: unknown,
+) {
+  const supplied = input && typeof input === "object"
+    ? input as Record<string, unknown>
+    : {};
+  const data = parseGupshupChannelData({
+    appId: supplied.appId ?? record.providerData.appId,
+    appName: supplied.appName ?? record.providerData.appName,
+    source: supplied.source ?? record.providerData.source,
+  });
+  if (!data) {
+    return {
+      status: 400,
+      body: {
+        error: "gupshup_app_details_required",
+        message: "Enter the WhatsApp app details to continue.",
+        channel: serializeChannel(record),
+      },
+    };
+  }
+  if (!gupshupIsConfigured()) {
+    return {
+      status: 503,
+      body: {
+        error: "channel_connection_unavailable",
+        message: CUSTOMER_CONNECTION_ERROR,
+        channel: serializeChannel(record),
+      },
+    };
+  }
+
+  record.provider = "GUPSHUP";
+  record.providerData = data;
+  record.status = "connecting";
+  record.failureReason = undefined;
+  record.failureCode = undefined;
+  await persistChannel(workspaceId, record);
+
+  const verified = await verifyGupshupChannel(data);
+  const now = new Date().toISOString();
+  record.providerAccountId = verified.providerAccountId;
+  record.displayName = verified.displayName;
+  record.status = "connected";
+  record.connectedAt = now;
+  record.lastVerifiedAt = now;
+  await persistChannel(workspaceId, record);
+  return {
+    status: 200,
+    body: {
+      channel: serializeChannel(record),
+      connectUrl: null,
+      message: "WhatsApp Business is connected.",
+    },
+  };
+}
+
 function assertWebhookSignature(req: Request): boolean {
   const secret = process.env.META_APP_SECRET;
   if (!secret) return false;
@@ -468,7 +584,7 @@ async function workspaceForProviderPayload(
     .from(channels)
     .where(and(
       eq(channels.type, channel.toUpperCase()),
-      eq(channels.status, "connected"),
+      eq(channels.status, "CONNECTED"),
       inArray(channels.providerAccountId, providerIds),
     ))
     .limit(2);
@@ -562,7 +678,16 @@ async function listConversations(workspaceId: string, channel?: ChannelName): Pr
   return [...grouped.values()];
 }
 
-async function ingestEvent(workspaceId: string, channelValue: string, event: Record<string, unknown>) {
+type IngestResult = {
+  conversation: ConversationRecord | null;
+  duplicate: boolean;
+};
+
+async function ingestEvent(
+  workspaceId: string,
+  channelValue: string,
+  event: Record<string, unknown>,
+): Promise<IngestResult> {
   const channel = eventChannel(channelValue);
   if (!channel) throw new Error("Unsupported channel.");
   const channelRecord = await verifiedChannel(workspaceId, channel);
@@ -577,15 +702,33 @@ async function ingestEvent(workspaceId: string, channelValue: string, event: Rec
     const text = typeof event.text === "string" ? event.text.trim() : "";
     if (!contactAddress || !text) throw new Error("Inbound message requires from and text.");
     const now = dateFromValue(event.timestamp);
-    const conversationId = await db.transaction(async (tx) => {
+    const stored = await db.transaction(async (tx) => {
       if (providerMessageId) {
         const [duplicate] = await tx.select({ conversationId: messages.conversationId })
           .from(messages)
           .innerJoin(conversations, eq(conversations.id, messages.conversationId))
           .where(and(eq(messages.providerMessageId, providerMessageId), eq(conversations.workspaceId, workspaceId)))
           .limit(1);
-        if (duplicate) return duplicate.conversationId;
+        if (duplicate) return { conversationId: duplicate.conversationId, duplicate: true };
       }
+      const contactName =
+        typeof event.contactName === "string" && event.contactName
+          ? event.contactName
+          : contactAddress;
+      const [createdContact] = await tx.insert(contacts).values({
+        workspaceId,
+        name: contactName,
+        phone: contactAddress,
+      }).onConflictDoUpdate({
+        target: [contacts.workspaceId, contacts.phone],
+        set: { name: contactName },
+      }).returning({ id: contacts.id });
+      const [contact] = createdContact
+        ? [createdContact]
+        : await tx.select({ id: contacts.id })
+          .from(contacts)
+          .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.phone, contactAddress)))
+          .limit(1);
       const [existing] = await tx.select({ id: conversations.id })
         .from(conversations)
         .where(and(eq(conversations.workspaceId, workspaceId), eq(conversations.channelId, channelRecord.id), eq(conversations.contactAddress, contactAddress), ne(conversations.status, "RESOLVED")))
@@ -596,8 +739,9 @@ async function ingestEvent(workspaceId: string, channelValue: string, event: Rec
         const [created] = await tx.insert(conversations).values({
           workspaceId,
           channelId: channelRecord.id,
+          contactId: contact?.id || null,
           providerConversationId: typeof event.providerConversationId === "string" ? event.providerConversationId : null,
-          contactName: typeof event.contactName === "string" && event.contactName ? event.contactName : contactAddress,
+          contactName,
           contactAddress,
           status: "OPEN",
           handoff: "ASSISTANT",
@@ -612,9 +756,12 @@ async function ingestEvent(workspaceId: string, channelValue: string, event: Rec
       if (!id) throw new Error("Conversation could not be created.");
       await tx.insert(messages).values({ conversationId: id, providerMessageId: providerMessageId || null, from: "customer", text, timestamp: now }).onConflictDoNothing({ target: messages.providerMessageId });
       await tx.update(conversations).set({ updatedAt: now }).where(and(eq(conversations.id, id), eq(conversations.workspaceId, workspaceId)));
-      return id;
+      return { conversationId: id, duplicate: false };
     });
-    return loadConversation(workspaceId, conversationId);
+    return {
+      conversation: await loadConversation(workspaceId, stored.conversationId),
+      duplicate: stored.duplicate,
+    };
   }
 
   const deliveryStatus: DeliveryStatus = eventType.endsWith("delivered")
@@ -651,7 +798,7 @@ async function ingestEvent(workspaceId: string, channelValue: string, event: Rec
       }).where(and(eq(channels.id, channelRecord.id), eq(channels.workspaceId, workspaceId)));
     }
   });
-  return null;
+  return { conversation: null, duplicate: false };
 }
 
 async function handleWebhook(req: Request, workspaceId: string, channelValue: string) {
@@ -690,7 +837,160 @@ async function handleWebhook(req: Request, workspaceId: string, channelValue: st
   return { status: 202, body: { accepted } };
 }
 
+function normalizedKnowledgeText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[؟?!.,،؛:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function automatedResponseFor(workspaceId: string, customerText: string): Promise<string | null> {
+  const normalized = normalizedKnowledgeText(customerText);
+  const faqRows = await db.select()
+    .from(faqItems)
+    .where(and(eq(faqItems.workspaceId, workspaceId), eq(faqItems.enabled, true)))
+    .orderBy(desc(faqItems.priority), asc(faqItems.createdAt));
+  const faq = faqRows.find((item) => normalizedKnowledgeText(item.question) === normalized);
+  if (faq) return faq.answer;
+
+  const rules = await db.select()
+    .from(autoReplyRules)
+    .where(and(eq(autoReplyRules.workspaceId, workspaceId), eq(autoReplyRules.enabled, true)))
+    .orderBy(desc(autoReplyRules.priority), asc(autoReplyRules.createdAt));
+  for (const rule of rules) {
+    const matches = rule.keywords.some((keyword) => {
+      const candidate = normalizedKnowledgeText(keyword);
+      if (!candidate) return false;
+      if (rule.matchType === "exact") return normalized === candidate;
+      if (rule.matchType === "starts_with") return normalized.startsWith(candidate);
+      return normalized.includes(candidate);
+    });
+    if (matches) return rule.response;
+  }
+  return null;
+}
+
+async function sendAndPersistAutomatedResponse(
+  workspaceId: string,
+  channel: ChannelRecord,
+  conversation: ConversationRecord,
+  text: string,
+) {
+  const timestamp = new Date();
+  try {
+    const providerMessageId = await sendProviderMessage(channel, conversation, text);
+    await db.insert(messages).values({
+      conversationId: conversation.id,
+      providerMessageId,
+      from: "assistant",
+      text,
+      timestamp,
+      deliveryStatus: "sent",
+    });
+  } catch (error) {
+    await db.insert(messages).values({
+      conversationId: conversation.id,
+      from: "assistant",
+      text,
+      timestamp,
+      deliveryStatus: "failed",
+      failureReason: CUSTOMER_SEND_ERROR,
+    });
+    throw error;
+  } finally {
+    await db.update(conversations)
+      .set({ updatedAt: timestamp })
+      .where(and(eq(conversations.id, conversation.id), eq(conversations.workspaceId, workspaceId)));
+  }
+}
+
+async function workspaceForGupshupPayload(
+  payload: Record<string, unknown>,
+): Promise<{ workspaceId: string; channel: ChannelRecord } | null> {
+  const appName = gupshupAppName(payload);
+  if (!appName) return null;
+  const rows = await db.select()
+    .from(channels)
+    .where(and(
+      eq(channels.type, "WHATSAPP"),
+      eq(channels.provider, "GUPSHUP"),
+      eq(channels.status, "CONNECTED"),
+    ));
+  const matches = rows.filter((row) => {
+    const data = parseGupshupChannelData(row.providerData);
+    return data?.appName === appName;
+  });
+  if (matches.length !== 1) return null;
+  return {
+    workspaceId: matches[0].workspaceId,
+    channel: channelFromRow(matches[0]),
+  };
+}
+
+export async function gupshupWebhookHandler(req: Request, res: Response) {
+  const payload =
+    req.body && typeof req.body === "object"
+      ? req.body as Record<string, unknown>
+      : {};
+  const owner = await workspaceForGupshupPayload(payload);
+  if (!owner) {
+    return res.status(409).json({
+      error: "webhook_workspace_not_resolved",
+      message: "The connected WhatsApp workspace could not be resolved.",
+    });
+  }
+
+  const events = normalizeGupshupPayload(payload);
+  if (events.length === 0) return res.status(202).json({ accepted: 0, duplicates: 0 });
+  let accepted = 0;
+  let duplicates = 0;
+  let automatedReplies = 0;
+  try {
+    for (const event of events) {
+      const result = await ingestEvent(
+        owner.workspaceId,
+        "whatsapp",
+        event as unknown as Record<string, unknown>,
+      );
+      accepted += 1;
+      if (result.duplicate) {
+        duplicates += 1;
+        continue;
+      }
+      if (event.event !== "message.received" || !result.conversation || !event.text) continue;
+      const response = await automatedResponseFor(owner.workspaceId, event.text);
+      if (!response) continue;
+      await sendAndPersistAutomatedResponse(
+        owner.workspaceId,
+        owner.channel,
+        result.conversation,
+        response,
+      );
+      automatedReplies += 1;
+    }
+    return res.status(202).json({ accepted, duplicates, automatedReplies });
+  } catch (error) {
+    req.log?.error(
+      { err: error, workspaceId: owner.workspaceId, provider: "GUPSHUP" },
+      "Gupshup webhook processing failed",
+    );
+    return res.status(202).json({
+      accepted,
+      duplicates,
+      automatedReplies,
+      warning: "The incoming message was stored, but an automated reply could not be completed.",
+    });
+  }
+}
+
 async function sendProviderMessage(record: ChannelRecord, conversation: ConversationRecord, text: string) {
+  if (record.provider === "GUPSHUP") {
+    const data = parseGupshupChannelData(record.providerData);
+    if (!data || !gupshupIsConfigured()) throw new Error("The channel is not verified for outbound messages.");
+    return sendGupshupText(data, conversation.contactAddress, text);
+  }
   if (!record.accessToken || !record.providerAccountId) throw new Error("The channel is not verified for outbound messages.");
   const config = providerConfig();
   const url = record.channel === "whatsapp"
@@ -758,6 +1058,10 @@ router.post("/workspaces/:workspaceId/channels/:channel/connect", async (req, re
   const channel = await channelOr404(workspaceId, req.params.channel);
   if (!channel) return res.status(404).json({ error: "unsupported_channel" });
   try {
+    if (channel.channel === "whatsapp" && channel.provider === "GUPSHUP") {
+      const result = await connectGupshupChannel(workspaceId, channel, req.body);
+      return res.status(result.status).json(result.body);
+    }
     return res.json(await connectChannel(
       workspaceId,
       channel,
@@ -766,10 +1070,19 @@ router.post("/workspaces/:workspaceId/channels/:channel/connect", async (req, re
       typeof req.body?.state === "string" ? req.body.state : undefined,
     ));
   } catch (error) {
-    await persistChannelFailure(workspaceId, channel, error, "provider_verification_failed");
+    req.log?.error(
+      { err: error, workspaceId, provider: channel.provider },
+      "Channel verification failed",
+    );
+    await persistChannelFailure(
+      workspaceId,
+      channel,
+      new Error(CUSTOMER_CONNECTION_ERROR),
+      "provider_verification_failed",
+    );
     return res.status(502).json({
       error: channel.failureCode,
-      message: channel.failureReason,
+      message: CUSTOMER_CONNECTION_ERROR,
       channel: serializeChannel(channel),
     });
   }
@@ -785,6 +1098,7 @@ router.get("/workspaces/:workspaceId/channels/:channel/callback", async (req, re
   try {
     return res.json(await connectChannel(workspaceId, channel, code, undefined, state));
   } catch (error) {
+    req.log?.error({ err: error, workspaceId, provider: channel.provider }, "Channel callback failed");
     await persistChannelFailure(workspaceId, channel, error, "provider_verification_failed");
     return res.status(502).json({
       error: channel.failureCode,
@@ -877,12 +1191,13 @@ router.post("/workspaces/:workspaceId/conversations/:conversationId/replies", as
       conversation: await loadConversation(workspaceId, conversation.id),
     });
   } catch (error) {
-    await persistFailedOutboundMessage(workspaceId, conversation, text, "team", error);
-    await persistChannelFailure(workspaceId, channel, error, "provider_send_failed");
+    req.log?.error({ err: error, workspaceId, provider: channel.provider }, "Outbound reply failed");
+    await persistFailedOutboundMessage(workspaceId, conversation, text, "team", new Error(CUSTOMER_SEND_ERROR));
+    await persistChannelFailure(workspaceId, channel, new Error(CUSTOMER_SEND_ERROR), "provider_send_failed");
     return res.status(502).json({
       error: "provider_send_failed",
-      message: error instanceof Error ? error.message : "Provider rejected the message.",
-      action: "Check channel credentials and provider permissions.",
+      message: CUSTOMER_SEND_ERROR,
+      action: "Try again later.",
     });
   }
 });
@@ -915,12 +1230,13 @@ router.post("/workspaces/:workspaceId/conversations/:conversationId/handoff", as
         .set({ updatedAt: timestamp })
         .where(and(eq(conversations.id, conversation.id), eq(conversations.workspaceId, workspaceId)));
     } catch (error) {
-      await persistFailedOutboundMessage(workspaceId, conversation, text, "assistant", error);
-      await persistChannelFailure(workspaceId, channel, error, "provider_send_failed");
+      req.log?.error({ err: error, workspaceId, provider: channel.provider }, "Outbound handoff failed");
+      await persistFailedOutboundMessage(workspaceId, conversation, text, "assistant", new Error(CUSTOMER_SEND_ERROR));
+      await persistChannelFailure(workspaceId, channel, new Error(CUSTOMER_SEND_ERROR), "provider_send_failed");
       return res.status(502).json({
         error: "provider_send_failed",
-        message: error instanceof Error ? error.message : "Provider rejected the handoff message.",
-        action: "Check channel credentials and provider permissions.",
+        message: CUSTOMER_SEND_ERROR,
+        action: "Try again later.",
       });
     }
   }
@@ -939,6 +1255,8 @@ router.get("/webhooks/:channel", (req, res) => {
   }
   return res.status(403).send("Webhook verification failed.");
 });
+
+router.post("/webhook/gupshup", gupshupWebhookHandler);
 
 router.post("/workspaces/:workspaceId/webhooks/:channel", async (req, res) => {
   const result = await handleWebhook(req, workspaceIdFromRequest(res), req.params.channel);

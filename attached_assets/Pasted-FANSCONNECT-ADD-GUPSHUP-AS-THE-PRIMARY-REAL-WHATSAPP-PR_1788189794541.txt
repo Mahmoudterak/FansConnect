@@ -1,0 +1,376 @@
+FANSCONNECT — ADD GUPSHUP AS THE PRIMARY REAL WHATSAPP PROVIDER
+
+We are switching the first production WhatsApp provider from Sends Bot
+to Gupshup.
+
+Keep Sends Bot as a secondary provider abstraction.
+
+Implement Gupshup as a real provider, NOT a mock.
+
+Official Gupshup documentation:
+
+https://docs.gupshup.io/
+https://www.gupshup.io/developers
+
+==================================================
+PROVIDER ARCHITECTURE
+==================================================
+
+Messaging Provider
+├── Gupshup
+├── Sends Bot
+└── WhatsApp Cloud API
+
+The Conversation Engine must remain provider-agnostic.
+
+Incoming message:
+
+Gupshup
+→ webhook
+→ tenant resolution
+→ duplicate check
+→ contact
+→ conversation
+→ FAQ
+→ Auto Reply
+→ Flow
+→ AI
+→ outgoing message
+→ Gupshup
+→ WhatsApp
+
+==================================================
+GUPSHUP ENVIRONMENT
+==================================================
+
+Use server-side secrets only.
+
+Required configuration should be environment based.
+
+Do not expose credentials to React.
+
+Use a Gupshup API key server-side.
+
+Never expose:
+
+API key
+webhook credentials
+provider secrets
+
+==================================================
+OUTBOUND API
+==================================================
+
+Use Gupshup's documented WhatsApp messaging API.
+
+The official documentation specifies:
+
+POST:
+https://api.gupshup.io/sm/api/v1/msg
+
+Authentication:
+
+apikey: YOUR_API_KEY
+
+Content-Type:
+
+application/x-www-form-urlencoded
+
+Implement the provider abstraction around the actual Gupshup API.
+
+Do not hard-code credentials.
+
+==================================================
+INBOUND WEBHOOK
+==================================================
+
+Implement a dedicated endpoint:
+
+POST /webhook/gupshup
+
+Receive inbound WhatsApp messages from Gupshup.
+
+Resolve:
+
+Gupshup app/source
+→ workspace
+→ channel
+→ tenant
+
+Never trust tenantId from the webhook payload.
+
+==================================================
+IDEMPOTENCY
+==================================================
+
+Persist the provider event/message ID.
+
+Duplicate inbound webhook:
+
+must NOT create another customer message.
+
+must NOT generate another bot response.
+
+Preserve existing duplicate-delivery behavior.
+
+==================================================
+CHANNEL MODEL
+==================================================
+
+Channel:
+
+provider = GUPSHUP
+
+status:
+
+NOT_CONNECTED
+CONNECTING
+CONNECTED
+ERROR
+PAUSED
+
+CONNECTED only after actual provider verification.
+
+Never fake connection status.
+
+==================================================
+CUSTOMER UI
+==================================================
+
+Customer sees:
+
+WhatsApp Business
+
+Gupshup
+
+غير متصل
+
+[ ربط WhatsApp ]
+
+After actual verification:
+
+WhatsApp Business
+
+Gupshup
+
+متصل
+
+Never show:
+
+API key
+environment variables
+webhook secret
+provider configuration details
+
+==================================================
+ADMIN CONFIGURATION
+==================================================
+
+Gupshup platform credentials belong to server/platform configuration.
+
+Normal customers must not see them.
+
+If platform configuration is missing:
+
+customer receives:
+
+"تعذر بدء ربط WhatsApp حالياً. حاول مرة أخرى لاحقاً."
+
+Do NOT show:
+
+GUPSHUP_API_KEY
+
+or environment variable names.
+
+==================================================
+FAQ REAL INTEGRATION
+==================================================
+
+Create:
+
+FAQ:
+
+السؤال:
+كم سعر تنظيف الأسنان؟
+
+الإجابة:
+تنظيف وتلميع الأسنان بسعر 199 درهم.
+
+Then use a REAL WhatsApp number connected through Gupshup.
+
+Send:
+
+كم سعر تنظيف الأسنان؟
+
+Expected:
+
+WhatsApp
+→ Gupshup
+→ FansConnect webhook
+→ FAQ
+→ Gupshup
+→ WhatsApp
+
+Customer must actually receive:
+
+تنظيف وتلميع الأسنان بسعر 199 درهم.
+
+==================================================
+FAQ EDIT TEST
+==================================================
+
+Change FAQ:
+
+199 درهم
+
+to:
+
+249 درهم
+
+Send the same WhatsApp message again.
+
+Expected:
+
+249 درهم
+
+This proves the FAQ UI is actually connected to the live bot.
+
+==================================================
+AUTO REPLY
+==================================================
+
+Create:
+
+keywords:
+سعر
+الاسعار
+التكلفة
+
+response:
+يسعدنا مساعدتك. أخبرنا بالخدمة التي ترغب بمعرفة سعرها.
+
+Test through REAL WhatsApp.
+
+==================================================
+INBOX
+==================================================
+
+Real Gupshup messages must appear in:
+
+/app/inbox
+
+Persist:
+
+contact
+conversation
+messages
+timestamps
+provider message IDs
+channel
+tenant
+
+==================================================
+RESTART
+==================================================
+
+Restart API.
+
+Verify:
+
+channel
+contacts
+conversations
+messages
+FAQ
+Auto Replies
+
+remain available from PostgreSQL.
+
+==================================================
+SECURITY
+==================================================
+
+Never expose provider credentials.
+
+Never trust tenantId from frontend/webhook.
+
+All resources must be tenant-scoped.
+
+==================================================
+ARABIC
+==================================================
+
+Customer-facing Gupshup channel UI must support:
+
+Arabic RTL
+English LTR
+
+==================================================
+TESTING
+==================================================
+
+Run:
+
+npm test
+npm run build
+
+API typecheck.
+
+Then perform a real Gupshup provider test if credentials are
+configured.
+
+Do NOT claim the integration is live if credentials are unavailable.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Gupshup provider:
+PASS / FAIL
+
+Gupshup API authentication:
+PASS / FAIL / NOT CONFIGURED
+
+WhatsApp number:
+PASS / FAIL / NOT CONFIGURED
+
+Webhook:
+PASS / FAIL
+
+Inbound message:
+PASS / FAIL / NOT TESTED
+
+FAQ response:
+PASS / FAIL / NOT TESTED
+
+Auto Reply:
+PASS / FAIL / NOT TESTED
+
+Outbound WhatsApp:
+PASS / FAIL / NOT TESTED
+
+Inbox:
+PASS / FAIL
+
+Persistence:
+PASS / FAIL
+
+Duplicate protection:
+PASS / FAIL
+
+Tenant isolation:
+PASS / FAIL
+
+Arabic RTL:
+PASS / FAIL
+
+Build:
+PASS / FAIL
+
+Tests:
+PASS / FAIL
+
+REAL WHATSAPP END-TO-END:
+PASS / FAIL / NOT TESTED
+
+Never fabricate a real provider result.
