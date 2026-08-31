@@ -17,6 +17,12 @@ export type GupshupInboundEvent = {
   error?: string;
 };
 
+export type GupshupEmbeddedSignupConfig = {
+  signupUrl: string;
+  callbackUrl: string;
+  returnUrl?: string;
+};
+
 function apiKey(): string {
   const value = process.env.gupshupAPPKAY?.trim();
   if (!value) throw new Error("Gupshup platform authentication is unavailable.");
@@ -25,6 +31,38 @@ function apiKey(): string {
 
 export function gupshupIsConfigured(): boolean {
   return Boolean(process.env.gupshupAPPKAY?.trim());
+}
+
+function configuredHttpsUrl(value: string | undefined): URL | null {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && url.hostname === "localhost")) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+export function gupshupEmbeddedSignupConfig(): GupshupEmbeddedSignupConfig | null {
+  const signupUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_URL);
+  const callbackUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_CALLBACK_URL);
+  const returnUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_RETURN_URL);
+  if (!signupUrl || !callbackUrl) return null;
+  return {
+    signupUrl: signupUrl.toString(),
+    callbackUrl: callbackUrl.toString(),
+    returnUrl: returnUrl?.toString(),
+  };
+}
+
+export function gupshupEmbeddedSignupUrl(state: string): string | null {
+  const config = gupshupEmbeddedSignupConfig();
+  if (!config) return null;
+  const url = new URL(config.signupUrl);
+  url.searchParams.set("state", state);
+  url.searchParams.set("redirect_uri", config.callbackUrl);
+  return url.toString();
 }
 
 export function parseGupshupChannelData(value: unknown): GupshupChannelData | null {

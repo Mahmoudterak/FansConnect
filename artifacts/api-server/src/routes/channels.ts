@@ -9,10 +9,13 @@ import {
   db,
   faqItems,
   messages,
+  assistantConfigs,
 } from "@workspace/db";
 import { getAuth } from "../lib/auth";
 import {
   gupshupAppName,
+  gupshupEmbeddedSignupConfig,
+  gupshupEmbeddedSignupUrl,
   gupshupIsConfigured,
   normalizeGupshupPayload,
   parseGupshupChannelData,
@@ -75,6 +78,7 @@ type ConversationRecord = {
 const router: IRouter = Router();
 const CUSTOMER_CONNECTION_ERROR = "Unable to connect WhatsApp right now. Please try again later.";
 const CUSTOMER_SEND_ERROR = "The message could not be sent right now. Please try again later.";
+const GUPSHUP_PARTNER_SETUP_MESSAGE = "Embedded Signup is unavailable until Gupshup Partner or Tech Provider onboarding is configured.";
 
 const channelLabels: Record<ChannelName, string> = {
   whatsapp: "WhatsApp Business",
@@ -245,6 +249,17 @@ function serializeChannel(record: ChannelRecord) {
   };
 }
 
+function serializeGupshupSetup() {
+  const configured = Boolean(gupshupEmbeddedSignupConfig());
+  return {
+    embeddedSignupAvailable: configured,
+    state: configured ? "ready" : "partner_setup_required",
+    message: configured
+      ? "Embedded Signup is ready."
+      : GUPSHUP_PARTNER_SETUP_MESSAGE,
+  };
+}
+
 function encryptionKey(): Buffer {
   const secret = process.env.SESSION_SECRET;
   if (!secret) throw new Error("SESSION_SECRET is required to store provider credentials securely.");
@@ -282,6 +297,7 @@ async function persistChannel(workspaceId: string, record: ChannelRecord) {
   const persistedStatus =
     record.status === "connected" ? "CONNECTED" :
     record.status === "connecting" ? "CONNECTING" :
+    record.status === "setup_required" ? "SETUP_REQUIRED" :
     record.status === "paused" ? "PAUSED" :
     record.status === "failed" || record.status === "degraded" ? "ERROR" :
     "NOT_CONNECTED";
@@ -439,20 +455,20 @@ async function connectGupshupChannel(
   record: ChannelRecord,
   input: unknown,
 ) {
-  const supplied = input && typeof input === "object"
-    ? input as Record<string, unknown>
-    : {};
-  const data = parseGupshupChannelData({
-    appId: supplied.appId ?? record.providerData.appId,
-    appName: supplied.appName ?? record.providerData.appName,
-    source: supplied.source ?? record.providerData.source,
-  });
-  if (!data) {
+  void input;
+  const connectUrl = gupshupEmbeddedSignupUrl(randomBytes(32).toString("base64url"));
+  if (!connectUrl) {
+    record.provider = "GUPSHUP";
+    record.status = "setup_required";
+    record.failureReason = GUPSHUP_PARTNER_SETUP_MESSAGE;
+    record.failureCode = "gupshup_partner_setup_required";
+    record.oauthState = undefined;
+    await persistChannel(workspaceId, record);
     return {
-      status: 400,
+      status: 503,
       body: {
-        error: "gupshup_app_details_required",
-        message: "Enter the WhatsApp app details to continue.",
+        error: "gupshup_partner_setup_required",
+        message: GUPSHUP_PARTNER_SETUP_MESSAGE,
         channel: serializeChannel(record),
       },
     };
@@ -468,29 +484,39 @@ async function connectGupshupChannel(
     };
   }
 
+  const state = new URL(connectUrl).searchParams.get("state");
+  if (!state) throw new Error("Embedded Signup state could not be created.");
   record.provider = "GUPSHUP";
-  record.providerData = data;
   record.status = "connecting";
   record.failureReason = undefined;
   record.failureCode = undefined;
-  await persistChannel(workspaceId, record);
-
-  const verified = await verifyGupshupChannel(data);
-  const now = new Date().toISOString();
-  record.providerAccountId = verified.providerAccountId;
-  record.displayName = verified.displayName;
-  record.status = "connected";
-  record.connectedAt = now;
-  record.lastVerifiedAt = now;
+  record.oauthState = state;
   await persistChannel(workspaceId, record);
   return {
-    status: 200,
+    status: 202,
     body: {
       channel: serializeChannel(record),
-      connectUrl: null,
-      message: "WhatsApp Business is connected.",
+      connectUrl,
+      message: "Continue with Gupshup to connect WhatsApp Business.",
     },
   };
+}
+
+function gupshupCallbackData(query: Request["query"]): GupshupChannelData | null {
+  return parseGupshupChannelData({
+    appId: query.appId ?? query.app_id,
+    appName: query.appName ?? query.app_name ?? query.app,
+    source: query.source ?? query.phone ?? query.phoneNumber ?? query.phone_number,
+  });
+}
+
+function redirectAfterGupshupCallback(res: Response, status: "connected" | "failed") {
+  const returnUrl = gupshupEmbeddedSignupConfig()?.returnUrl;
+  if (!returnUrl) return false;
+  const url = new URL(returnUrl);
+  url.searchParams.set("gupshup", status);
+  res.redirect(303, url.toString());
+  return true;
 }
 
 function assertWebhookSignature(req: Request): boolean {
@@ -948,6 +974,11 @@ export async function gupshupWebhookHandler(req: Request, res: Response) {
   let duplicates = 0;
   let automatedReplies = 0;
   try {
+    const [assistant] = await db.select({ status: assistantConfigs.status })
+      .from(assistantConfigs)
+      .where(eq(assistantConfigs.workspaceId, owner.workspaceId))
+      .limit(1);
+    const assistantActive = assistant?.status === "ACTIVE";
     for (const event of events) {
       const result = await ingestEvent(
         owner.workspaceId,
@@ -960,6 +991,7 @@ export async function gupshupWebhookHandler(req: Request, res: Response) {
         continue;
       }
       if (event.event !== "message.received" || !result.conversation || !event.text) continue;
+      if (!assistantActive) continue;
       const response = await automatedResponseFor(owner.workspaceId, event.text);
       if (!response) continue;
       await sendAndPersistAutomatedResponse(
@@ -1052,6 +1084,11 @@ router.get("/workspaces/:workspaceId/channels", async (req, res) => {
   res.json({ channels: records.map(serializeChannel) });
 });
 
+router.get("/workspaces/:workspaceId/channels/setup", async (_req, res) => {
+  workspaceIdFromRequest(res);
+  return res.json({ gupshup: serializeGupshupSetup() });
+});
+
 router.post("/workspaces/:workspaceId/channels/:channel/connect", async (req, res) => {
   const workspaceId = workspaceIdFromRequest(res);
   if (!canManageWorkspace(res)) return res.status(403).json({ error: "workspace_owner_required" });
@@ -1123,6 +1160,57 @@ router.get("/oauth/meta/callback", async (req, res) => {
     return res.status(502).json({
       error: channel.failureCode,
       message: channel.failureReason,
+      channel: serializeChannel(channel),
+    });
+  }
+});
+
+router.get("/oauth/gupshup/callback", async (req, res) => {
+  const state = typeof req.query.state === "string" ? req.query.state : undefined;
+  if (!state) return res.status(400).json({ error: "provider_state_required" });
+  const [row] = await db.select()
+    .from(channels)
+    .where(and(eq(channels.oauthState, state), eq(channels.provider, "GUPSHUP")))
+    .limit(1);
+  if (!row) return res.status(400).json({ error: "invalid_provider_state" });
+  const workspaceId = row.workspaceId;
+  const channel = channelFromRow(row);
+  const data = gupshupCallbackData(req.query);
+  if (!data) {
+    await persistChannelFailure(
+      workspaceId,
+      channel,
+      new Error("Gupshup did not return the required app details."),
+      "provider_callback_incomplete",
+    );
+    if (redirectAfterGupshupCallback(res, "failed")) return;
+    return res.status(400).json({ error: channel.failureCode, message: CUSTOMER_CONNECTION_ERROR });
+  }
+  try {
+    const verified = await verifyGupshupChannel(data);
+    const now = new Date().toISOString();
+    channel.providerData = data;
+    channel.providerAccountId = verified.providerAccountId;
+    channel.displayName = verified.displayName;
+    channel.status = "connected";
+    channel.connectedAt = now;
+    channel.lastVerifiedAt = now;
+    channel.failureReason = undefined;
+    channel.failureCode = undefined;
+    channel.oauthState = undefined;
+    await persistChannel(workspaceId, channel);
+    if (redirectAfterGupshupCallback(res, "connected")) return;
+    return res.json({
+      channel: serializeChannel(channel),
+      message: "WhatsApp Business is connected.",
+    });
+  } catch (error) {
+    req.log?.error({ err: error, workspaceId, provider: "GUPSHUP" }, "Gupshup callback verification failed");
+    await persistChannelFailure(workspaceId, channel, new Error(CUSTOMER_CONNECTION_ERROR), "provider_verification_failed");
+    if (redirectAfterGupshupCallback(res, "failed")) return;
+    return res.status(502).json({
+      error: channel.failureCode,
+      message: CUSTOMER_CONNECTION_ERROR,
       channel: serializeChannel(channel),
     });
   }

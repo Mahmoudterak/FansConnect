@@ -40,6 +40,42 @@ type LiveConversation = {
   updatedAt: string;
   messages: { id: string; from: 'customer' | 'team' | 'assistant'; text: string; timestamp: string; deliveryStatus?: string }[];
 };
+type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  priority: number;
+  enabled: boolean;
+};
+type AutoReplyRule = {
+  id: string;
+  name: string;
+  keywords: string[];
+  matchType: 'contains' | 'exact' | 'starts_with';
+  response: string;
+  priority: number;
+  enabled: boolean;
+};
+type AssistantConfig = {
+  status: string;
+  personality: string;
+  language: 'ar' | 'en';
+  dialect: string;
+  responseStyle: string;
+  welcomeMessage: string;
+  outOfScopeResponse: string;
+  humanHandoffMessage: string;
+  aiFailureMessage: string;
+  businessInstructions: string;
+};
+type WorkspaceSetup = {
+  profile: WorkspaceContextData['profile'];
+  assistant: AssistantConfig | null;
+  channels: { type: string; provider: string | null; status: string }[];
+  faq: FaqItem[];
+  autoReplies: AutoReplyRule[];
+};
 
 type WorkspaceContextData = {
   workspace: { id: string; name: string };
@@ -536,16 +572,25 @@ function ChannelsPageV2() {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
-  const [gupshup, setGupshup] = useState({ appId: '', appName: '', source: '' });
+  const [gupshupSetup, setGupshupSetup] = useState<{ embeddedSignupAvailable: boolean; state: string; message: string } | null>(null);
   const load = useCallback(async () => {
     setState('loading');
     try {
-      const result = await workspaceApi<{ channels: LiveChannel[] }>('/channels');
+      const [result, setup] = await Promise.all([
+        workspaceApi<{ channels: LiveChannel[] }>('/channels'),
+        workspaceApi<{ gupshup: { embeddedSignupAvailable: boolean; state: string; message: string } }>('/channels/setup'),
+      ]);
       setChannels(result.channels);
+      setGupshupSetup(setup.gupshup);
       setState('ready');
     } catch { setState('error'); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const callbackStatus = new URLSearchParams(window.location.search).get('gupshup');
+    if (callbackStatus === 'connected') setNotice('WhatsApp Business is connected.');
+    if (callbackStatus === 'failed') setNotice('Gupshup could not verify the WhatsApp Business connection.');
+    void load();
+  }, [load]);
   const connect = async (channel: LiveChannel['channel']) => {
     setBusy(channel);
     setNotice('');
@@ -554,7 +599,7 @@ function ChannelsPageV2() {
         `/channels/${channel}/connect`,
         {
           method: 'POST',
-          body: JSON.stringify(channel === 'whatsapp' ? gupshup : {}),
+          body: JSON.stringify({}),
         },
       );
       setNotice(result.message);
@@ -583,15 +628,109 @@ function ChannelsPageV2() {
           <Badge tone={connected ? 'green' : item.status === 'failed' ? 'red' : 'gold'}>{t(status)}</Badge>
         </div>
         {isGupshup && !connected && <div className="mt-5 space-y-3 rounded-xl bg-[#f4f1e8] p-4">
-          <input aria-label={t('WhatsApp app ID')} value={gupshup.appId} onChange={(event) => setGupshup((value) => ({ ...value, appId: event.target.value }))} placeholder={t('WhatsApp app ID')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
-          <input aria-label={t('WhatsApp app name')} value={gupshup.appName} onChange={(event) => setGupshup((value) => ({ ...value, appName: event.target.value }))} placeholder={t('WhatsApp app name')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
-          <input aria-label={t('WhatsApp business number')} inputMode="tel" value={gupshup.source} onChange={(event) => setGupshup((value) => ({ ...value, source: event.target.value }))} placeholder={t('WhatsApp business number')} className="w-full rounded-xl border border-[#ddd8cc] bg-[#fbf9f3] px-3 py-2.5 text-xs" />
-          <p className="text-[10px] leading-4 text-[#7c8d85]">{t('These details identify your WhatsApp app. Your provider key stays private on the server.')}</p>
+          <div className="flex items-start gap-3"><BadgeCheck size={18} className="mt-0.5 shrink-0 text-[#39745a]" /><div><div className="text-xs font-extrabold text-[#45675b]">Gupshup Embedded Signup</div><p className="mt-1 text-[11px] leading-5 text-[#71857b]">{gupshupSetup?.message || 'Checking Embedded Signup availability…'}</p></div></div>
+          {!gupshupSetup?.embeddedSignupAvailable && <p className="rounded-lg border border-[#ead8b8] bg-[#fff8e9] px-3 py-2 text-[10px] leading-4 text-[#8a682d]">A Gupshup Partner or Tech Provider account is required before customer onboarding can start. No connection will be shown until Gupshup verifies it.</p>}
         </div>}
-        <div className="mt-5">{connected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{t('Disconnect')}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || (isGupshup && (!gupshup.appId.trim() || !gupshup.appName.trim() || !gupshup.source.trim()))}>{busy === item.channel ? t('Checking…') : `${t('Connect')} ${item.channel === 'whatsapp' ? 'WhatsApp' : 'Instagram'}`} <Link2 size={14} /></Button>}</div>
+        <div className="mt-5">{connected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>{t('Disconnect')}</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || item.status === 'connecting' || (isGupshup && !gupshupSetup?.embeddedSignupAvailable)}>{busy === item.channel ? t('Checking…') : isGupshup ? 'Continue with Gupshup' : `${t('Connect')} Instagram`} <Link2 size={14} /></Button>}</div>
       </article>;
     })}</div>}
   </SettingsLayout>;
+}
+
+function TrainingPage() {
+  const { t } = useLanguage();
+  const auth = useAuth();
+  const [setup, setSetup] = useState<WorkspaceSetup | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [notice, setNotice] = useState('');
+  const [faqForm, setFaqForm] = useState({ id: '', question: '', answer: '', category: 'General' });
+  const [ruleForm, setRuleForm] = useState({ id: '', name: '', keywords: '', matchType: 'contains' as AutoReplyRule['matchType'], response: '' });
+  const load = useCallback(async () => {
+    setState('loading');
+    try {
+      setSetup(await apiRequest<WorkspaceSetup>('/workspace/setup'));
+      setState('ready');
+    } catch {
+      setState('error');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const saveFaq = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setNotice('');
+    try {
+      await apiRequest(`/workspace/faq${faqForm.id ? `/${faqForm.id}` : ''}`, {
+        method: faqForm.id ? 'PATCH' : 'POST',
+        body: JSON.stringify({ question: faqForm.question, answer: faqForm.answer, category: faqForm.category, priority: 0, enabled: true }),
+      });
+      setFaqForm({ id: '', question: '', answer: '', category: 'General' });
+      setNotice('FAQ saved.');
+      await Promise.all([load(), auth.refresh()]);
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Unable to save FAQ.');
+    }
+  };
+  const saveRule = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const keywords = ruleForm.keywords.split(',').map((item) => item.trim()).filter(Boolean);
+    setNotice('');
+    try {
+      await apiRequest(`/workspace/auto-replies${ruleForm.id ? `/${ruleForm.id}` : ''}`, {
+        method: ruleForm.id ? 'PATCH' : 'POST',
+        body: JSON.stringify({ name: ruleForm.name, keywords, matchType: ruleForm.matchType, response: ruleForm.response, priority: 0, enabled: true }),
+      });
+      setRuleForm({ id: '', name: '', keywords: '', matchType: 'contains', response: '' });
+      setNotice('Auto-reply saved.');
+      await Promise.all([load(), auth.refresh()]);
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Unable to save auto-reply.');
+    }
+  };
+  const remove = async (kind: 'faq' | 'auto-replies', id: string) => {
+    setNotice('');
+    try {
+      await apiRequest(`/workspace/${kind}/${id}`, { method: 'DELETE' });
+      await Promise.all([load(), auth.refresh()]);
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Unable to delete this item.');
+    }
+  };
+  const editFaq = (item: FaqItem) => {
+    setFaqForm({ id: item.id, question: item.question, answer: item.answer, category: item.category });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const editRule = (item: AutoReplyRule) => {
+    setRuleForm({ id: item.id, name: item.name, keywords: item.keywords.join(', '), matchType: item.matchType, response: item.response });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  if (state === 'loading') return <Shell><div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Loading workspace settings…')}</div></Shell>;
+  if (state === 'error' || !setup) return <Shell><div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div></Shell>;
+  return <Shell>
+    <PageHeading eyebrow="Automation" title="FAQ & auto-replies" description="Add the approved answers and keyword rules the assistant may send. Changes are saved to this workspace." />
+    {notice && <div role="status" className="mb-5 rounded-xl border border-[#d9e6d6] bg-[#e8f2e4] px-4 py-3 text-xs font-bold text-[#39745a]">{t(notice)}</div>}
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5">
+        <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-[#e8f2e4] text-[#39745a]"><CircleHelp size={18} /></div><div><h2 className="font-display text-lg font-extrabold text-[#315f54]">Frequently asked questions</h2><p className="text-[11px] text-[#82938b]">FAQ matches are checked before keyword rules.</p></div></div>
+        <form onSubmit={saveFaq} className="mt-5 space-y-3">
+          <input required aria-label="FAQ question" value={faqForm.question} onChange={(event) => setFaqForm((value) => ({ ...value, question: event.target.value }))} placeholder="Customer question" className="w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" />
+          <textarea required aria-label="FAQ answer" value={faqForm.answer} onChange={(event) => setFaqForm((value) => ({ ...value, answer: event.target.value }))} placeholder="Approved answer" className="min-h-28 w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" />
+          <div className="flex flex-col gap-3 sm:flex-row"><input required aria-label="FAQ category" value={faqForm.category} onChange={(event) => setFaqForm((value) => ({ ...value, category: event.target.value }))} placeholder="Category" className="min-w-0 flex-1 rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" /><Button type="submit"><Save size={14} />{faqForm.id ? 'Update FAQ' : 'Add FAQ'}</Button>{faqForm.id && <Button type="button" variant="secondary" onClick={() => setFaqForm({ id: '', question: '', answer: '', category: 'General' })}>Cancel</Button>}</div>
+        </form>
+        <div className="mt-6 space-y-3">{setup.faq.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-center text-xs text-[#82938b]">No FAQs yet.</div> : setup.faq.map((item) => <article key={item.id} className="rounded-xl border border-[#e7e1d6] bg-[#f7f4eb] p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-extrabold text-[#315f54]">{item.question}</div><p className="mt-2 text-xs leading-5 text-[#71857b]">{item.answer}</p><div className="mt-2 text-[10px] font-bold uppercase text-[#9a7a4f]">{item.category} · {item.enabled ? 'Enabled' : 'Disabled'}</div></div><div className="flex shrink-0 gap-1"><button aria-label="Edit FAQ" onClick={() => editFaq(item)} className="grid size-8 place-items-center rounded-lg text-[#6d8c7e] hover:bg-[#e5f0e3]"><Pencil size={14} /></button><button aria-label="Delete FAQ" onClick={() => void remove('faq', item.id)} className="grid size-8 place-items-center rounded-lg text-[#a25243] hover:bg-[#f7e2dc]"><Trash2 size={14} /></button></div></div></article>)}</div>
+      </section>
+      <section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5">
+        <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-[#f8eac5] text-[#8a6326]"><Zap size={18} /></div><div><h2 className="font-display text-lg font-extrabold text-[#315f54]">Automatic replies</h2><p className="text-[11px] text-[#82938b]">Trigger an approved response using customer keywords.</p></div></div>
+        <form onSubmit={saveRule} className="mt-5 space-y-3">
+          <input required aria-label="Rule name" value={ruleForm.name} onChange={(event) => setRuleForm((value) => ({ ...value, name: event.target.value }))} placeholder="Rule name" className="w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" />
+          <input required aria-label="Rule keywords" value={ruleForm.keywords} onChange={(event) => setRuleForm((value) => ({ ...value, keywords: event.target.value }))} placeholder="Keywords, separated by commas" className="w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" />
+          <select aria-label="Match type" value={ruleForm.matchType} onChange={(event) => setRuleForm((value) => ({ ...value, matchType: event.target.value as AutoReplyRule['matchType'] }))} className="w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs"><option value="contains">Contains</option><option value="exact">Exact match</option><option value="starts_with">Starts with</option></select>
+          <textarea required aria-label="Rule response" value={ruleForm.response} onChange={(event) => setRuleForm((value) => ({ ...value, response: event.target.value }))} placeholder="Approved response" className="min-h-28 w-full rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] px-3 py-3 text-xs" />
+          <div className="flex flex-wrap gap-3"><Button type="submit"><Save size={14} />{ruleForm.id ? 'Update rule' : 'Add auto-reply'}</Button>{ruleForm.id && <Button type="button" variant="secondary" onClick={() => setRuleForm({ id: '', name: '', keywords: '', matchType: 'contains', response: '' })}>Cancel</Button>}</div>
+        </form>
+        <div className="mt-6 space-y-3">{setup.autoReplies.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-center text-xs text-[#82938b]">No automatic replies yet.</div> : setup.autoReplies.map((item) => <article key={item.id} className="rounded-xl border border-[#e7e1d6] bg-[#f7f4eb] p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-extrabold text-[#315f54]">{item.name}</div><div className="mt-1 text-[10px] font-bold text-[#9a7a4f]">{item.matchType} · {item.keywords.join(', ')}</div><p className="mt-2 text-xs leading-5 text-[#71857b]">{item.response}</p></div><div className="flex shrink-0 gap-1"><button aria-label="Edit auto-reply" onClick={() => editRule(item)} className="grid size-8 place-items-center rounded-lg text-[#6d8c7e] hover:bg-[#e5f0e3]"><Pencil size={14} /></button><button aria-label="Delete auto-reply" onClick={() => void remove('auto-replies', item.id)} className="grid size-8 place-items-center rounded-lg text-[#a25243] hover:bg-[#f7e2dc]"><Trash2 size={14} /></button></div></div></article>)}</div>
+      </section>
+    </div>
+  </Shell>;
 }
 
 function ContactsPage() {

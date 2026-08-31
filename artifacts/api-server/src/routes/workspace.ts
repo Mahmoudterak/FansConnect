@@ -50,6 +50,14 @@ const ruleInput = z.object({
   enabled: z.boolean().default(true),
 });
 
+const faqInput = z.object({
+  question: z.string().trim().min(1).max(1000),
+  answer: z.string().trim().min(1).max(3000),
+  category: z.string().trim().min(1).max(120).default("General"),
+  priority: z.number().int().min(0).max(1000).default(0),
+  enabled: z.boolean().default(true),
+});
+
 const assistantInput = z.object({
   personality: z.string().max(80).default("PROFESSIONAL"),
   language: z.enum(["ar", "en"]).default("ar"),
@@ -214,6 +222,43 @@ router.delete("/workspace/auto-replies/:id", async (req, res, next) => {
   }
 });
 
+router.post("/workspace/faq", async (req, res, next) => {
+  try {
+    const [created] = await db.insert(faqItems).values({
+      ...faqInput.parse(req.body),
+      workspaceId: getAuth(res).workspaceId,
+    }).returning();
+    return res.status(201).json(created);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch("/workspace/faq/:id", async (req, res, next) => {
+  try {
+    const [updated] = await db.update(faqItems)
+      .set({ ...faqInput.partial().parse(req.body), updatedAt: new Date() })
+      .where(and(eq(faqItems.id, req.params.id), eq(faqItems.workspaceId, getAuth(res).workspaceId)))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "FAQ_NOT_FOUND", message: "FAQ item not found." });
+    return res.json(updated);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete("/workspace/faq/:id", async (req, res, next) => {
+  try {
+    const deleted = await db.delete(faqItems)
+      .where(and(eq(faqItems.id, req.params.id), eq(faqItems.workspaceId, getAuth(res).workspaceId)))
+      .returning({ id: faqItems.id });
+    if (!deleted.length) return res.status(404).json({ error: "FAQ_NOT_FOUND", message: "FAQ item not found." });
+    return res.status(204).send();
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.patch("/workspace/assistant", async (req, res, next) => {
   try {
     const [updated] = await db.update(assistantConfigs).set({ ...assistantInput.parse(req.body), updatedAt: new Date() }).where(eq(assistantConfigs.workspaceId, getAuth(res).workspaceId)).returning();
@@ -249,15 +294,35 @@ router.delete("/workspace/training/:id", async (req, res, next) => {
 router.post("/workspace/activate", async (_req, res, next) => {
   try {
     const workspaceId = getAuth(res).workspaceId;
-    const [profile] = await db.select().from(businessProfiles).where(eq(businessProfiles.workspaceId, workspaceId)).limit(1);
-    const [whatsapp] = await db.select().from(channels).where(and(eq(channels.workspaceId, workspaceId), eq(channels.type, "WHATSAPP"))).limit(1);
+    const [[profile], [whatsapp], [faqCount], [ruleCount]] = await Promise.all([
+      db.select().from(businessProfiles).where(eq(businessProfiles.workspaceId, workspaceId)).limit(1),
+      db.select().from(channels).where(and(eq(channels.workspaceId, workspaceId), eq(channels.type, "WHATSAPP"))).limit(1),
+      db.select({ count: count() }).from(faqItems).where(and(eq(faqItems.workspaceId, workspaceId), eq(faqItems.enabled, true))),
+      db.select({ count: count() }).from(autoReplyRules).where(and(eq(autoReplyRules.workspaceId, workspaceId), eq(autoReplyRules.enabled, true))),
+    ]);
     if (!profile?.businessName || !profile.activityType) return res.status(409).json({ error: "PROFILE_REQUIRED", message: "Complete your business information before activating." });
     if (whatsapp?.status !== "CONNECTED") return res.status(409).json({ error: "WHATSAPP_REQUIRED", message: "Connect and verify WhatsApp Business before activating the assistant." });
+    if (Number(faqCount?.count || 0) + Number(ruleCount?.count || 0) === 0) {
+      return res.status(409).json({ error: "AUTOMATION_REQUIRED", message: "Add at least one enabled FAQ or auto-reply before activating the assistant." });
+    }
     await db.transaction(async (tx) => {
       await tx.update(assistantConfigs).set({ status: "ACTIVE", updatedAt: new Date() }).where(eq(assistantConfigs.workspaceId, workspaceId));
       await tx.update(onboardingStates).set({ currentStep: 7, completedSteps: [1, 2, 3, 4, 5, 6, 7], completedAt: new Date(), updatedAt: new Date() }).where(eq(onboardingStates.workspaceId, workspaceId));
     });
     return res.json({ activated: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/workspace/pause", async (_req, res, next) => {
+  try {
+    const [assistant] = await db.update(assistantConfigs)
+      .set({ status: "PAUSED", updatedAt: new Date() })
+      .where(eq(assistantConfigs.workspaceId, getAuth(res).workspaceId))
+      .returning();
+    if (!assistant) return res.status(404).json({ error: "ASSISTANT_MISSING", message: "Assistant configuration is not available." });
+    return res.json({ paused: true, assistant });
   } catch (error) {
     return next(error);
   }
