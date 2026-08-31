@@ -284,7 +284,7 @@ async function connectChannel(
   state?: string,
 ) {
   if (!code) return setupResponse(record);
-  if (record.oauthState && state !== record.oauthState) {
+  if (!record.oauthState || state !== record.oauthState) {
     throw new Error("Invalid provider authorization state.");
   }
   const accessToken = await exchangeCode(code);
@@ -502,7 +502,7 @@ function ingestEvent(
     typeof event.providerMessageId === "string" ? event.providerMessageId : undefined;
   const conversations = conversationList(workspaceId);
 
-  if (eventType.startsWith("message.") && eventType !== "message.delivered" && eventType !== "message.read") {
+  if (eventType === "message.received") {
     const contactAddress =
       typeof event.from === "string" ? event.from : typeof event.senderId === "string" ? event.senderId : "";
     const text = typeof event.text === "string" ? event.text.trim() : "";
@@ -570,6 +570,20 @@ async function handleWebhook(req: Request, workspaceId: string, channelValue: st
     return { status: 401, body: { error: "invalid_webhook_signature" } };
   }
   const payload = req.body as Record<string, unknown>;
+  const payloadWorkspace = workspaceForProviderPayload(channelValue, payload);
+  const providerAccountIds = providerAccountIdsFromPayload(payload);
+  if (
+    providerAccountIds.length > 0 &&
+    (!payloadWorkspace || payloadWorkspace !== workspaceId)
+  ) {
+    return {
+      status: 409,
+      body: {
+        error: "workspace_channel_mismatch",
+        message: "The webhook payload does not belong to this workspace.",
+      },
+    };
+  }
   const events = normalizeProviderPayload(channelValue, payload);
   let accepted = 0;
   try {
@@ -798,7 +812,6 @@ router.post("/workspaces/:workspaceId/webhooks/:channel", async (req, res) => {
 
 router.post("/webhooks/:channel", async (req, res) => {
   const workspaceId =
-    req.header("x-workspace-id") ||
     workspaceForProviderPayload(req.params.channel, req.body as Record<string, unknown>) ||
     "current";
   const result = await handleWebhook(req, workspaceId, req.params.channel);
