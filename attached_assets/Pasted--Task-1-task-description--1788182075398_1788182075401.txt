@@ -1,0 +1,266 @@
+ابدأ الآن بتنفيذ Task #1 بالكامل على الكود الحالي.
+
+لا تكتفِ بالخطة ولا تعدّل الـtask description فقط.
+
+نفّذ فعلياً:
+
+1. Registration
+   - إنشاء User حقيقي.
+   - إنشاء Tenant/Workspace حقيقي.
+   - بدون أي Demo Data.
+
+2. First Login
+   - إذا onboardingCompleted = false
+     → /onboarding
+   - إذا true
+     → /app
+
+3. إنشاء Workspace فارغ:
+   - 0 conversations
+   - 0 contacts
+   - 0 leads
+   - 0 appointments
+   - 0 orders
+   - WhatsApp = NOT_CONNECTED
+   - Instagram = NOT_CONNECTED
+   - AI = PAUSED
+   - FAQ = empty
+   - Auto Replies = empty
+   - Training = empty
+
+4. نفّذ Onboarding من 7 خطوات:
+
+   1. معلومات النشاط
+   2. الخدمات
+   3. WhatsApp
+   4. الرد التلقائي
+   5. المساعد الذكي
+   6. أمثلة المحادثات
+   7. المراجعة والتفعيل
+
+5. احفظ كل خطوة في قاعدة البيانات.
+
+6. اجعل onboarding قابلاً للاستكمال:
+   إذا أغلق العميل الصفحة، يعود إلى آخر خطوة مكتملة.
+
+7. Business Profile:
+   - اسم النشاط
+   - نوع النشاط
+   - وصف مختصر
+   - الهاتف
+   - البريد
+   - المدينة
+   - الدولة
+   - ساعات العمل
+   - طرق الدفع
+
+8. Services:
+   - الاسم
+   - الوصف
+   - السعر
+   - العملة
+   - مدة الخدمة
+   - إضافة / تعديل / حذف
+
+9. WhatsApp:
+   لا تسمح بتفعيل AI قبل نجاح اتصال WhatsApp فعلياً.
+
+   الحالة الافتراضية:
+   NOT_CONNECTED
+
+   لا تعرض:
+   Connected
+   رقم هاتف وهمي
+   تاريخ اتصال وهمي
+   Messages count وهمي
+   Health وهمي
+
+10. Auto Reply:
+    اجعل العميل ينشئ:
+
+    Keywords → Response
+
+    مع:
+    - matchType
+    - priority
+    - enabled
+
+11. AI Assistant:
+    الشخصية:
+    - ودود ومحترف
+    - رسمي ومختصر
+    - مرح وعفوي
+    - احترافي وتقني
+    - متعاطف وداعم
+
+    طول الرد:
+    - مختصر
+    - متوسط
+    - مفصل
+
+    اللغة:
+    - العربية
+    - English
+
+    اللهجة العربية:
+    - الفصحى الحديثة
+    - السعودية
+    - الخليجية
+    - المصرية
+    - الشامية
+    - المغربية
+
+    مع:
+    - Welcome Message
+    - Out of Scope
+    - Human Handoff
+    - AI Failure
+    - Business Rules
+
+12. Training Examples:
+
+    Customer Message
+    Business Response
+    Bot Note
+    Optional Image
+
+    الحد الأقصى 20 مثالاً.
+
+13. Review:
+    اعرض البيانات الحقيقية التي أدخلها العميل.
+
+14. Activation:
+    لا تسمح بالتفعيل إذا كانت المتطلبات الأساسية ناقصة.
+
+    خصوصاً:
+    WhatsApp غير متصل
+    → لا يمكن تفعيل AI.
+
+15. بعد التفعيل:
+    onboardingCompleted = true
+    assistantStatus = ACTIVE
+    redirect → /app
+
+16. Dashboard:
+    إذا لم توجد بيانات حقيقية:
+
+    Conversations = 0
+    Leads = 0
+    Appointments = 0
+    Orders = 0
+
+    استخدم Empty States مفيدة.
+
+17. احذف أي fallback يعرض Demo Data عندما تفشل API.
+
+    إذا فشل API:
+    اعرض Error State.
+
+    لا تعرض:
+    Bayt Noor Studio
+    Basma Noor
+    Amina
+    Marian
+    Omar
+    أرقام وهمية
+    محادثات وهمية
+    Metrics وهمية.
+
+18. افحص جميع components والpages والhooks والservices بحثاً عن:
+    mock data
+    demo data
+    hard-coded customer data
+    fake connected state
+
+19. تأكد من tenantId في كل البيانات الخاصة بالعميل.
+
+20. اختبر Tenant Isolation.
+
+21. لا تغيّر الوظائف الأخرى غير الضرورية.
+
+بعد التنفيذ شغّل:
+
+npm test
+npm run build
+
+ثم افتح Preview فعلياً.
+
+اختبر مستخدم جديد تماماً:
+
+Register
+→ Login
+→ Onboarding
+→ Business Profile
+→ Services
+→ WhatsApp
+→ Auto Reply
+→ AI
+→ Training
+→ Review
+→ Activation
+→ Dashboard
+
+وأثبت أن المستخدم الجديد لا يرى أي Demo Data.
+
+في النهاية لا تقل "تم" فقط.
+
+أرسل تقريراً بهذا الشكل:
+
+TASK #1
+IMPLEMENTED / FAILED
+
+REGISTRATION:
+PASS / FAIL
+
+REAL EMPTY WORKSPACE:
+PASS / FAIL
+
+ONBOARDING:
+PASS / FAIL
+
+RESUMABLE ONBOARDING:
+PASS / FAIL
+
+BUSINESS PROFILE:
+PASS / FAIL
+
+SERVICES:
+PASS / FAIL
+
+WHATSAPP GATING:
+PASS / FAIL
+
+AUTO REPLIES:
+PASS / FAIL
+
+AI CONFIGURATION:
+PASS / FAIL
+
+TRAINING:
+PASS / FAIL
+
+FINAL REVIEW:
+PASS / FAIL
+
+ACTIVATION:
+PASS / FAIL
+
+ZERO-STATE DASHBOARD:
+PASS / FAIL
+
+DEMO DATA REMOVED:
+PASS / FAIL
+
+TENANT ISOLATION:
+PASS / FAIL
+
+BUILD:
+PASS / FAIL
+
+TESTS:
+PASS / FAIL
+
+PREVIEW:
+PASS / FAIL
+
+اذكر أي نقطة لم تُنفذ فعلياً ولا تعتبرها مكتملة.
