@@ -12,6 +12,12 @@ tags:
     description: Health operations
   - name: billing
     description: Workspace billing catalog
+  - name: channels
+    description: Verified WhatsApp and Instagram channel connections
+  - name: conversations
+    description: Workspace inbox conversations and outbound messages
+  - name: webhooks
+    description: Provider webhook ingestion
 paths:
   /healthz:
     get:
@@ -39,7 +45,279 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanCatalog"
+  /workspaces/{workspaceId}/channels:
+    get:
+      operationId: listWorkspaceChannels
+      tags: [channels]
+      summary: List channel connection state
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Channel state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels]
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Channel"
+  /workspaces/{workspaceId}/channels/{channel}/connect:
+    post:
+      operationId: connectWorkspaceChannel
+      tags: [channels]
+      summary: Start or finish provider authorization
+      description: Starts Meta OAuth when configured, or verifies a returned authorization code. A channel is connected only after provider verification succeeds.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Channel"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectChannelRequest"
+      responses:
+        "200":
+          description: Setup, authorization, or verified connection state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectChannelResponse"
+        "403":
+          description: Workspace owner required
+        "502":
+          description: Provider verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderError"
+  /workspaces/{workspaceId}/channels/{channel}/callback:
+    get:
+      operationId: completeWorkspaceChannelConnection
+      tags: [channels]
+      summary: Complete Meta OAuth callback
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Channel"
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Verified connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectChannelResponse"
+        "502":
+          description: Provider verification failed
+  /oauth/meta/callback:
+    get:
+      operationId: completeMetaOAuthConnection
+      tags: [channels]
+      summary: Complete a Meta OAuth connection using its state
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Verified connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectChannelResponse"
+        "400":
+          description: Invalid or missing provider state
+        "502":
+          description: Provider verification failed
+  /workspaces/{workspaceId}/channels/{channel}:
+    delete:
+      operationId: disconnectWorkspaceChannel
+      tags: [channels]
+      summary: Disconnect a provider channel
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Channel"
+      responses:
+        "204":
+          description: Disconnected
+        "403":
+          description: Workspace owner required
+  /workspaces/{workspaceId}/conversations:
+    get:
+      operationId: listWorkspaceConversations
+      tags: [conversations]
+      summary: List real inbox conversations
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: channel
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ChannelName"
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversations]
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Conversation"
+  /workspaces/{workspaceId}/conversations/{conversationId}/replies:
+    post:
+      operationId: sendConversationReply
+      tags: [conversations]
+      summary: Send a reply through the verified channel
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageRequest"
+      responses:
+        "201":
+          description: Provider accepted the message
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, conversation]
+                properties:
+                  message:
+                    $ref: "#/components/schemas/Message"
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+        "409":
+          description: Channel is not verified
+        "502":
+          description: Provider rejected the message
+  /workspaces/{workspaceId}/conversations/{conversationId}/handoff:
+    post:
+      operationId: handoffConversation
+      tags: [conversations]
+      summary: Hand off a conversation to the team
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageRequest"
+      responses:
+        "200":
+          description: Handoff completed through the verified channel
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation]
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+        "409":
+          description: Channel is not verified
+  /workspaces/{workspaceId}/webhooks/{channel}:
+    post:
+      operationId: ingestWorkspaceChannelWebhook
+      tags: [webhooks]
+      summary: Ingest an inbound message or delivery event
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/Channel"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookEvent"
+      responses:
+        "202":
+          description: Events accepted
+        "401":
+          description: Invalid webhook signature
+        "409":
+          description: Channel is not verified
+  /webhooks/{channel}:
+    get:
+      operationId: verifyMetaWebhook
+      tags: [webhooks]
+      summary: Verify a Meta webhook subscription
+      parameters:
+        - $ref: "#/components/parameters/Channel"
+        - name: hub.mode
+          in: query
+          required: true
+          schema: { type: string }
+        - name: hub.verify_token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: hub.challenge
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Challenge returned }
+        "403": { description: Verification failed }
+    post:
+      operationId: ingestChannelWebhook
+      tags: [webhooks]
+      summary: Ingest a provider webhook using the workspace header
+      parameters:
+        - $ref: "#/components/parameters/Channel"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookEvent"
+      responses:
+        "202": { description: Events accepted }
+        "401": { description: Invalid webhook signature }
+        "409": { description: Channel is not verified }
 components:
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema: { type: string }
+    Channel:
+      name: channel
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ChannelName"
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string }
   schemas:
     HealthStatus:
       type: object
@@ -97,4 +375,125 @@ components:
         - description
         - limits
         - features
+    ChannelName:
+      type: string
+      enum: [whatsapp, instagram]
+    ChannelHealth:
+      type: object
+      required: [state, verified, message, action]
+      properties:
+        state:
+          type: string
+          enum: [healthy, connecting, setup_required, disconnected, failed]
+        verified: { type: boolean }
+        message: { type: string }
+        action:
+          type: [string, "null"]
+    Channel:
+      type: object
+      required: [channel, name, status, verified, providerAccountId, displayName, connectedAt, lastVerifiedAt, failureReason, failureCode, health]
+      properties:
+        channel: { $ref: "#/components/schemas/ChannelName" }
+        name: { type: string }
+        status:
+          type: string
+          enum: [setup_required, connecting, connected, degraded, failed, disconnected]
+        verified: { type: boolean }
+        providerAccountId:
+          type: [string, "null"]
+        displayName:
+          type: [string, "null"]
+        connectedAt:
+          type: [string, "null"]
+          format: date-time
+        lastVerifiedAt:
+          type: [string, "null"]
+          format: date-time
+        failureReason:
+          type: [string, "null"]
+        failureCode:
+          type: [string, "null"]
+        health: { $ref: "#/components/schemas/ChannelHealth" }
+    ConnectChannelRequest:
+      type: object
+      properties:
+        code: { type: string }
+        state: { type: string }
+        providerAccountId: { type: string }
+    ConnectChannelResponse:
+      type: object
+      required: [channel, connectUrl, message]
+      properties:
+        channel: { $ref: "#/components/schemas/Channel" }
+        connectUrl:
+          type: [string, "null"]
+          format: uri
+        message: { type: string }
+    ProviderError:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        action: { type: string }
+        channel: { $ref: "#/components/schemas/Channel" }
+    MessageRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1 }
+    Message:
+      type: object
+      required: [id, from, text, timestamp]
+      properties:
+        id: { type: string }
+        providerMessageId:
+          type: [string, "null"]
+        from:
+          type: string
+          enum: [customer, team, assistant]
+        text: { type: string }
+        timestamp: { type: string, format: date-time }
+        deliveryStatus:
+          type: [string, "null"]
+          enum: [queued, sent, delivered, read, failed, null]
+        failureReason:
+          type: [string, "null"]
+    Conversation:
+      type: object
+      required: [id, channel, contactName, contactAddress, status, handoff, updatedAt, messages]
+      properties:
+        id: { type: string }
+        channel: { $ref: "#/components/schemas/ChannelName" }
+        providerConversationId:
+          type: [string, "null"]
+        contactName: { type: string }
+        contactAddress: { type: string }
+        status:
+          type: string
+          enum: [open, pending, resolved]
+        handoff:
+          type: string
+          enum: [assistant, team]
+        updatedAt: { type: string, format: date-time }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+    WebhookEvent:
+      type: object
+      description: Normalized event payload used by the workspace webhook route. Meta payloads can be adapted at the edge.
+      properties:
+        event:
+          type: string
+          enum: [message.received, message.delivered, message.read, message.failed]
+        providerMessageId: { type: string }
+        providerConversationId: { type: string }
+        from: { type: string }
+        contactName: { type: string }
+        text: { type: string }
+        timestamp: { type: string, format: date-time }
+        error: { type: string }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/WebhookEvent" }
 

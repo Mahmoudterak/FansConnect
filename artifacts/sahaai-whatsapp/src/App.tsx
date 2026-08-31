@@ -19,6 +19,43 @@ const queryClient = new QueryClient();
 
 type Channel = 'WhatsApp' | 'Instagram';
 type Conversation = { id: number; contactName: string; avatar: string; channel: Channel; lastMessage: string; timestamp: string; unread: number; status: string; tags: string[]; messages: { from: 'customer' | 'team'; text: string; time: string }[] };
+type LiveChannel = {
+  channel: 'whatsapp' | 'instagram';
+  name: string;
+  status: 'setup_required' | 'connecting' | 'connected' | 'degraded' | 'failed' | 'disconnected';
+  verified: boolean;
+  displayName: string | null;
+  lastVerifiedAt: string | null;
+  failureReason: string | null;
+  health: { state: string; verified: boolean; message: string; action: string | null };
+};
+type LiveConversation = {
+  id: string;
+  channel: 'whatsapp' | 'instagram';
+  contactName: string;
+  contactAddress: string;
+  status: 'open' | 'pending' | 'resolved';
+  handoff: 'assistant' | 'team';
+  updatedAt: string;
+  messages: { id: string; from: 'customer' | 'team' | 'assistant'; text: string; timestamp: string; deliveryStatus?: string }[];
+};
+
+const workspaceApi = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(`/api/workspaces/current${path}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', 'x-workspace-role': 'owner', ...(init?.headers ?? {}) },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || 'Workspace service unavailable.') as Error & { payload?: unknown };
+    error.payload = payload;
+    throw error;
+  }
+  return payload as T;
+};
+
+const liveChannelLabel = (channel: LiveChannel['channel']) => channel === 'whatsapp' ? 'WhatsApp Business' : 'Instagram Direct';
+const liveChannelMark = (channel: LiveChannel['channel']): Channel => channel === 'whatsapp' ? 'WhatsApp' : 'Instagram';
 
 const formatAED = (amount: number, locale = 'en-AE') => new Intl.NumberFormat(locale, {
   style: 'currency',
@@ -91,13 +128,21 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [channelHealth, setChannelHealth] = useState('Checking channels…');
   const current = navGroups.flatMap(group => group.items).find(item => location === item.href)?.label ?? 'Overview';
+  useEffect(() => {
+    workspaceApi<{ channels: LiveChannel[] }>('/channels').then(({ channels }) => {
+      if (channels.some((item) => item.status === 'failed' || item.status === 'degraded')) setChannelHealth('Channel action needed');
+      else if (channels.length > 0 && channels.every((item) => item.status === 'connected' && item.verified)) setChannelHealth('Channels verified');
+      else setChannelHealth('Channel setup required');
+    }).catch(() => setChannelHealth('Channel status unavailable'));
+  }, []);
   return <div className="app-shell grain flex">
     <aside className={`desktop-sidebar fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[#2a5147] bg-[#173f36] px-4 py-5 text-[#ecede1] transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : ''}`}>
       <div className="mb-8 flex items-center justify-between px-2"><Brand dark /><button data-testid="button-close-sidebar" className="text-[#94b8a6] md:hidden" onClick={() => setMobileOpen(false)}><X size={19} /></button></div>
       <div className="mb-6 flex items-center gap-3 rounded-2xl border border-[#356357] bg-[#214c42] p-3"><div className="grid size-9 place-items-center rounded-xl bg-[#e8d8b8] font-display text-sm font-extrabold text-[#28574d]">FC</div><div className="min-w-0"><div className="truncate text-[13px] font-bold">Your workspace</div><div className="mt-0.5 text-[10px] text-[#9cbaab]">United Arab Emirates</div></div><ChevronDown size={15} className="ml-auto text-[#9cbaab]" /></div>
       <nav className="flex-1 space-y-6 overflow-y-auto">{navGroups.map(group => <div key={group.label}><div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#7ea496]">{group.label}</div><div className="space-y-1">{group.items.map(item => { const active = location === item.href || (item.href !== '/app' && location.startsWith(item.href)); const Icon = item.icon; return <Link key={item.label} href={item.href} data-testid={`link-${item.label.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-colors ${active ? 'bg-[#b8e3c2] text-[#173f36] shadow-[0_4px_16px_rgba(184,227,194,.12)]' : 'text-[#a9c4b7] hover:bg-[#214c42] hover:text-[#f1eadc]'}`}><Icon size={17} strokeWidth={active ? 2.5 : 1.8} /><span className="flex-1">{item.label}</span>{item.count && <span className={`grid size-5 place-items-center rounded-full text-[10px] ${active ? 'bg-[#173f36] text-[#b8e3c2]' : 'bg-[#cc7c4c] text-white'}`}>{item.count}</span>}</Link>})}</div></div>)}</nav>
-      <div className="mt-4 border-t border-[#2a5147] pt-4"><div className="mb-3 flex items-center gap-3 px-2"><Avatar initials="FC" tone="gold" size="sm" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">Workspace owner</div><div className="truncate text-[10px] text-[#91b1a2]">Admin account</div></div><button data-testid="button-sidebar-settings" onClick={() => setLocation('/app/business-profile')} className="text-[#91b1a2] hover:text-[#e8d8b8]"><Settings2 size={16} /></button></div><div className="flex items-center justify-between rounded-xl bg-[#214c42] px-3 py-2"><div className="flex items-center gap-2 text-[11px] text-[#b7d2c4]"><span className="size-2 rounded-full bg-[#b8e3c2]" />All systems healthy</div><CircleHelp size={14} className="text-[#8aad9c]" /></div></div>
+      <div className="mt-4 border-t border-[#2a5147] pt-4"><div className="mb-3 flex items-center gap-3 px-2"><Avatar initials="FC" tone="gold" size="sm" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">Workspace owner</div><div className="truncate text-[10px] text-[#91b1a2]">Admin account</div></div><button data-testid="button-sidebar-settings" onClick={() => setLocation('/app/business-profile')} className="text-[#91b1a2] hover:text-[#e8d8b8]"><Settings2 size={16} /></button></div><div className="flex items-center justify-between rounded-xl bg-[#214c42] px-3 py-2"><div className="flex items-center gap-2 text-[11px] text-[#b7d2c4]"><span className="size-2 rounded-full bg-[#e7c893]" />{channelHealth}</div><Link href="/app/channels" className="text-[#8aad9c] hover:text-[#e8d8b8]" aria-label="Manage channel setup"><CircleHelp size={14} /></Link></div></div>
     </aside>
     {mobileOpen && <button data-testid="button-overlay" className="fixed inset-0 z-30 bg-[#173f36]/35 md:hidden" onClick={() => setMobileOpen(false)} />}
       <main className="workspace ml-0 flex min-h-[100dvh] w-full flex-col md:ml-[248px]">
@@ -128,7 +173,7 @@ function Overview() {
   </Shell>;
 }
 
-function InboxPage() {
+function LegacyInboxPage() {
   const [selected, setSelected] = useState(1);
   const [filter, setFilter] = useState('All');
   const [message, setMessage] = useState('');
@@ -137,6 +182,136 @@ function InboxPage() {
   const filtered = conversationsSeed.filter(c => filter === 'All' || c.channel === filter || c.status === filter);
   const send = () => { if (!message.trim()) return; setSent(prev => ({ ...prev, [selected]: [...(prev[selected] ?? []), message.trim()] })); setMessage(''); };
   return <Shell><div className="page-enter mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#b66c43]">Shared inbox</div><h1 className="font-display text-[30px] font-extrabold tracking-[-.05em] text-[#1b4a3f]">Stay close to every conversation.</h1></div><div className="flex gap-2"><Button variant="secondary"><Filter size={15} />Filters</Button><Button><Plus size={15} />New message</Button></div></div><div className="grid min-h-[650px] overflow-hidden rounded-2xl border border-[#e1dbce] bg-[#fbf9f3] shadow-[var(--shadow-card)] md:grid-cols-[300px_1fr_250px]"><section className="border-b border-[#e5dfd4] md:border-b-0 md:border-r"><div className="border-b border-[#eee9df] p-4"><div className="relative"><Search size={15} className="absolute left-3 top-3 text-[#98a69f]" /><input data-testid="input-search-inbox" placeholder="Search conversations" className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f5f2e9] py-2.5 pl-9 pr-3 text-xs text-[#315f54] outline-none placeholder:text-[#9aa69e]" /></div><div className="mt-3 flex gap-1 overflow-auto">{['All', 'WhatsApp', 'Instagram', 'Open'].map(item => <button data-testid={`button-filter-${item.toLowerCase()}`} key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${filter === item ? 'bg-[#d9e9d8] text-[#2f7055]' : 'text-[#899991] hover:bg-[#eee9df]'}`}>{item}</button>)}</div></div><div className="max-h-[545px] overflow-auto p-2">{filtered.map((conversation, i) => <button data-testid={`button-conversation-${conversation.id}`} key={conversation.id} onClick={() => setSelected(conversation.id)} className={`float-in flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${selected === conversation.id ? 'bg-[#e4f0e2]' : 'hover:bg-[#f0ede4]'}`} style={{ animationDelay: `${i * 55}ms` }}><div className="relative"><Avatar initials={conversation.avatar} tone={i % 3 === 0 ? 'clay' : i % 3 === 1 ? 'blue' : 'green'} size="sm" />{conversation.unread > 0 && <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[#cc7c4c] text-[9px] font-bold text-white">{conversation.unread}</span>}</div><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-bold text-[#315f54]">{conversation.contactName}</span><span className="text-[10px] text-[#99a49e]">{conversation.timestamp}</span></div><div className="mt-1 truncate text-[11px] text-[#87958e]">{conversation.lastMessage}</div><div className="mt-2 flex items-center gap-1.5"><ChannelMark channel={conversation.channel} /><span className="text-[9px] font-bold text-[#8b9b92]">{conversation.status}</span></div></div></button>)}</div></section><section className="flex min-h-[550px] flex-col border-b border-[#e5dfd4] md:border-b-0 md:border-r"><div className="flex items-center justify-between border-b border-[#eee9df] px-5 py-3.5"><div className="flex items-center gap-3"><Avatar initials={current.avatar} tone="clay" /><div><div className="flex items-center gap-2 text-sm font-bold text-[#28574d]">{current.contactName}<ChannelMark channel={current.channel} /></div><div className="text-[10px] text-[#95a29c]">Last active 2 minutes ago</div></div></div><div className="flex gap-1"><button data-testid="button-mark-resolved" className="grid size-8 place-items-center rounded-lg text-[#759086] hover:bg-[#e8f0e4] hover:text-[#2e7355]" title="Mark resolved"><CheckCircle2 size={16} /></button><button data-testid="button-more-conversation" className="grid size-8 place-items-center rounded-lg text-[#759086] hover:bg-[#eee9df]"><MoreHorizontal size={17} /></button></div></div><div className="flex-1 space-y-4 overflow-auto bg-[#f7f4eb] p-5"><div className="flex justify-center"><span className="rounded-full bg-[#ebe7db] px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-[#95a198]">Today</span></div>{current.messages.map((msg, i) => <div key={`${current.id}-${i}`} className={`flex ${msg.from === 'team' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-xs leading-5 shadow-sm ${msg.from === 'team' ? 'rounded-br-md bg-[#d5ebd7] text-[#315f54]' : 'rounded-bl-md border border-[#e4ded3] bg-[#fbf9f3] text-[#506961]'}`}><div>{msg.text}</div><div className={`mt-1 text-[9px] ${msg.from === 'team' ? 'text-[#6d9580]' : 'text-[#9ba69f]'}`}>{msg.time}</div></div></div>)}{(sent[current.id] ?? []).map((text, i) => <div key={`sent-${i}`} className="flex justify-end"><div className="max-w-[78%] rounded-2xl rounded-br-md bg-[#d5ebd7] px-3.5 py-2.5 text-xs leading-5 text-[#315f54] shadow-sm"><div>{text}</div><div className="mt-1 text-[9px] text-[#6d9580]">Just now</div></div></div>)}</div><div className="border-t border-[#e6e0d5] bg-[#fbf9f3] p-4"><div className="flex items-end gap-2 rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] p-1.5"><textarea data-testid="textarea-reply" value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={1} placeholder="Write a reply in English or العربية..." className="focus-ring min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-xs text-[#315f54] outline-none placeholder:text-[#99a69e]" /><button data-testid="button-send-reply" onClick={send} className="grid size-9 place-items-center rounded-lg bg-[#235d51] text-[#f8f2e7] transition hover:bg-[#194c42] disabled:opacity-40" disabled={!message.trim()}><Send size={15} /></button></div><div className="mt-2 flex items-center justify-between px-1 text-[9px] text-[#9aa59f]"><span>Press Enter to send</span><button data-testid="button-suggest-reply" className="flex items-center gap-1 font-bold text-[#ad704c] hover:text-[#8f4f31]"><Sparkles size={11} />Suggest reply</button></div></div></section><aside className="hidden p-5 md:block"><div className="mb-5 flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-[.15em] text-[#9aa59f]">Contact context</span><button data-testid="button-edit-contact" className="text-[#b66c43]"><Pencil size={14} /></button></div><div className="flex flex-col items-center text-center"><Avatar initials={current.avatar} tone="clay" size="lg" /><div className="mt-3 font-display text-[16px] font-extrabold text-[#28574d]">{current.contactName}</div><div className="mt-1 text-[11px] text-[#94a29b]">{current.channel === 'WhatsApp' ? '+966 55 291 8042' : '@mariam.studio'}</div></div><div className="my-5 border-t border-[#eee9df]" /><div className="space-y-4"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Labels</div><div className="flex flex-wrap gap-1.5">{current.tags.map(tag => <Badge key={tag} tone={tag === 'High intent' ? 'gold' : 'neutral'}>{tag}</Badge>)}<button data-testid="button-add-tag" className="grid size-6 place-items-center rounded-full border border-dashed border-[#c6cfc8] text-[#8ca098] hover:border-[#6da883] hover:text-[#39745a]"><Plus size={12} /></button></div></div><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Lead status</div><select data-testid="select-lead-status" className="w-full rounded-lg border border-[#e3ddd2] bg-[#f7f4eb] px-2.5 py-2 text-xs font-bold text-[#527068] outline-none"><option>Qualified</option><option>New</option><option>Follow-up</option><option>Won</option></select></div><div><div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#a0aaa4]">Notes</div><div className="rounded-xl bg-[#f3efe5] p-3 text-[11px] leading-5 text-[#7d8f86]">Interested in November. Prefers morning consultations.</div></div></div></aside></div></Shell>;
+}
+
+function InboxPage() {
+  const [conversations, setConversations] = useState<LiveConversation[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState('All');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    workspaceApi<{ conversations: LiveConversation[] }>('/conversations')
+      .then(({ conversations: next }) => {
+        setConversations(next);
+        setSelectedId(next[0]?.id ?? null);
+      })
+      .catch((reason: Error) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = conversations.filter((conversation) =>
+    filter === 'All' || conversation.channel === filter.toLowerCase() || conversation.status === filter.toLowerCase(),
+  );
+  const current = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? null;
+
+  const send = async () => {
+    if (!current || !message.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await workspaceApi<{ conversation: LiveConversation }>(
+        `/conversations/${current.id}/replies`,
+        { method: 'POST', body: JSON.stringify({ text: message.trim() }) },
+      );
+      setConversations((previous) => previous.map((item) => item.id === result.conversation.id ? result.conversation : item));
+      setMessage('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The provider rejected this reply.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handoff = async () => {
+    if (!current || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await workspaceApi<{ conversation: LiveConversation }>(
+        `/conversations/${current.id}/handoff`,
+        { method: 'POST', body: JSON.stringify({}) },
+      );
+      setConversations((previous) => previous.map((item) => item.id === result.conversation.id ? result.conversation : item));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The handoff could not be completed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <Shell><PageHeading eyebrow="Shared inbox" title="Your inbox is loading." description="Conversations appear here after a verified channel receives a message." /></Shell>;
+
+  return <Shell>
+    <PageHeading eyebrow="Shared inbox" title="Stay close to every conversation." description="Replies and assistant handoffs are sent through the verified channel that received the message." action={<Link href="/app/channels" className="inline-flex items-center gap-2 rounded-xl border border-[#d9d4c8] bg-[#fbf8f0] px-3.5 py-2.5 text-[13px] font-bold text-[#28574d]">Manage channels <Link2 size={14} /></Link>} />
+    {error && <div data-testid="inbox-error" className="mb-5 flex items-start gap-2 rounded-xl border border-[#e9c5be] bg-[#fdf3f0] px-4 py-3 text-xs font-bold text-[#a25243]"><AlertCircle size={15} className="mt-0.5 shrink-0" />{error}</div>}
+    {conversations.length === 0 ? <div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center"><Inbox size={28} className="mx-auto text-[#7da189]" /><h2 className="mt-4 font-display text-lg font-extrabold text-[#315f54]">No conversations yet</h2><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-[#71857b]">Connect and verify WhatsApp Business or Instagram to start receiving real customer messages. This inbox does not contain demo conversations.</p><Link href="/app/channels" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#235d51] px-3.5 py-2.5 text-xs font-bold text-[#f8f2e7]">Connect a channel <ArrowRight size={14} /></Link></div> :
+      <div className="grid min-h-[620px] overflow-hidden rounded-2xl border border-[#e1dbce] bg-[#fbf9f3] shadow-[var(--shadow-card)] md:grid-cols-[290px_1fr]">
+        <section className="border-b border-[#e5dfd4] md:border-b-0 md:border-r">
+          <div className="border-b border-[#eee9df] p-4"><div className="relative"><Search size={15} className="absolute left-3 top-3 text-[#98a69f]" /><input data-testid="input-search-inbox" placeholder="Search conversations" className="focus-ring w-full rounded-xl border border-[#e2dcd1] bg-[#f5f2e9] py-2.5 pl-9 pr-3 text-xs outline-none placeholder:text-[#9aa69e]" /></div><div className="mt-3 flex gap-1 overflow-auto">{['All', 'WhatsApp', 'Instagram', 'open'].map((item) => <button data-testid={`button-filter-${item.toLowerCase()}`} key={item} onClick={() => setFilter(item === 'open' ? 'open' : item)} className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${filter === item ? 'bg-[#d9e9d8] text-[#2f7055]' : 'text-[#899991]'}`}>{item === 'open' ? 'Open' : item}</button>)}</div></div>
+          <div className="max-h-[545px] overflow-auto p-2">{filtered.map((conversation, index) => <button data-testid={`button-conversation-${conversation.id}`} key={conversation.id} onClick={() => setSelectedId(conversation.id)} className={`flex w-full items-start gap-3 rounded-xl p-3 text-left ${current?.id === conversation.id ? 'bg-[#e4f0e2]' : 'hover:bg-[#f0ede4]'}`}><Avatar initials={conversation.contactName.slice(0, 2).toUpperCase()} tone={index % 2 ? 'blue' : 'clay'} size="sm" /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-bold text-[#315f54]">{conversation.contactName}</span><span className="text-[10px] text-[#99a49e]">{new Date(conversation.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div><div className="mt-1 truncate text-[11px] text-[#87958e]">{conversation.messages.at(-1)?.text}</div><div className="mt-2 flex items-center gap-1.5"><ChannelMark channel={liveChannelMark(conversation.channel)} /><span className="text-[9px] font-bold text-[#8b9b92]">{conversation.handoff === 'team' ? 'Team handoff' : conversation.status}</span></div></div></button>)}</div>
+        </section>
+        {current && <section className="flex min-h-[550px] flex-col"><div className="flex items-center justify-between border-b border-[#eee9df] px-5 py-3.5"><div className="flex items-center gap-3"><Avatar initials={current.contactName.slice(0, 2).toUpperCase()} tone="clay" /><div><div className="flex items-center gap-2 text-sm font-bold text-[#28574d]">{current.contactName}<ChannelMark channel={liveChannelMark(current.channel)} /></div><div className="mt-0.5 text-[10px] text-[#92a098]">{current.contactAddress}</div></div></div><Button variant="secondary" onClick={handoff} disabled={busy}><Headphones size={14} />Hand off to team</Button></div><div className="flex-1 space-y-3 overflow-auto p-5">{current.messages.map((item) => <div key={item.id} className={`flex ${item.from === 'customer' ? 'justify-start' : 'justify-end'}`}><div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-xs leading-5 shadow-sm ${item.from === 'customer' ? 'rounded-bl-md border border-[#e4ded3] bg-[#fbf9f3] text-[#506961]' : 'rounded-br-md bg-[#d5ebd7] text-[#315f54]'}`}><div>{item.text}</div><div className="mt-1 text-[9px] opacity-70">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.deliveryStatus ? ` · ${item.deliveryStatus}` : ''}</div></div></div>)}</div><div className="border-t border-[#e6e0d5] p-4"><div className="flex items-end gap-2 rounded-xl border border-[#ddd8cc] bg-[#f7f4eb] p-1.5"><textarea data-testid="textarea-reply" value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder="Write a reply in English or العربية..." className="focus-ring min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-xs text-[#315f54] outline-none placeholder:text-[#99a69e]" /><button data-testid="button-send-reply" onClick={() => void send()} className="grid size-9 place-items-center rounded-lg bg-[#235d51] text-[#f8f2e7] disabled:opacity-40" disabled={!message.trim() || busy}><Send size={15} /></button></div><div className="mt-2 text-[9px] text-[#9aa59f]">Messages are sent only after the provider accepts them.</div></div></section>}
+      </div>}
+  </Shell>;
+}
+
+function ChannelsPageV2() {
+  const [channels, setChannels] = useState<LiveChannel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  const loadChannels = () => {
+    setLoading(true);
+    workspaceApi<{ channels: LiveChannel[] }>('/channels')
+      .then(({ channels: next }) => setChannels(next))
+      .catch((reason: Error) => setNotice({ tone: 'error', text: reason.message }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadChannels(); }, []);
+
+  const connect = async (channel: LiveChannel['channel']) => {
+    setBusy(channel);
+    setNotice(null);
+    try {
+      const result = await workspaceApi<{ channel: LiveChannel; connectUrl: string | null; message: string }>(
+        `/channels/${channel}/connect`,
+        { method: 'POST', body: JSON.stringify({}) },
+      );
+      setChannels((previous) => previous.map((item) => item.channel === channel ? result.channel : item));
+      setNotice({ tone: 'info', text: result.message });
+      if (result.connectUrl) window.location.assign(result.connectUrl);
+    } catch (reason) {
+      const payload = (reason as Error & { payload?: { channel?: LiveChannel } }).payload;
+      if (payload?.channel) setChannels((previous) => previous.map((item) => item.channel === channel ? payload.channel! : item));
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'Provider verification failed.' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disconnect = async (channel: LiveChannel['channel']) => {
+    setBusy(channel);
+    setNotice(null);
+    try {
+      await workspaceApi(`/channels/${channel}`, { method: 'DELETE' });
+      loadChannels();
+    } catch (reason) {
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'The channel could not be disconnected.' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram only after provider verification. Setup-required states are shown until real credentials pass Meta checks.">
+    {notice && <div data-testid="channel-notice" className={`mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${notice.tone === 'error' ? 'border-[#e9c5be] bg-[#fdf3f0] text-[#a25243]' : 'border-[#d9e6d6] bg-[#e8f2e4] text-[#39745a]'}`}><AlertCircle size={15} className="mt-0.5 shrink-0" />{notice.text}</div>}
+    {loading ? <div className="rounded-2xl border border-dashed border-[#d7dfd5] bg-[#f3f7ee] p-10 text-center text-xs font-bold text-[#6e8579]">Checking provider state…</div> : <div className="grid gap-5 md:grid-cols-2">{channels.map((item) => { const isConnected = item.status === 'connected' && item.verified; const isFailed = item.status === 'failed'; return <div data-testid={`card-channel-${item.channel}`} key={item.channel} className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><div className={`grid size-11 place-items-center rounded-xl ${item.channel === 'whatsapp' ? 'bg-[#d8f0dc] text-[#287550]' : 'bg-[#f6dbe8] text-[#a14472]'}`}>{item.channel === 'whatsapp' ? <MessageCircle size={22} /> : <Instagram size={22} />}</div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">{liveChannelLabel(item.channel)}</h2><p data-testid={`status-channel-${item.channel}`} className="mt-1 text-[11px] text-[#82938b]">{isConnected ? `Connected${item.displayName ? ` · ${item.displayName}` : ''}` : item.status === 'connecting' ? 'Authorization in progress' : item.status === 'failed' ? 'Verification failed' : item.status === 'disconnected' ? 'Disconnected' : 'Setup required'}</p></div></div><Badge tone={isConnected ? 'green' : isFailed ? 'red' : item.status === 'connecting' ? 'blue' : 'gold'}>{isConnected ? 'Verified' : item.status === 'connecting' ? 'Connecting' : isFailed ? 'Action needed' : 'Not ready'}</Badge></div><div className="mt-6 rounded-xl bg-[#f4f1e8] p-3 text-xs leading-5 text-[#71857b]"><div className="font-bold text-[#557269]">{item.health.message}</div>{item.health.action && <div className="mt-1">{item.health.action}</div>}</div>{isFailed && item.failureReason && <div className="mt-3 text-[11px] font-bold text-[#a25243]">{item.failureReason}</div>}<div className="mt-5 flex gap-2">{isConnected ? <Button variant="danger" onClick={() => void disconnect(item.channel)} disabled={busy === item.channel}>Disconnect</Button> : <Button onClick={() => void connect(item.channel)} disabled={busy === item.channel || item.status === 'connecting'}>{busy === item.channel ? 'Checking…' : isFailed ? 'Try again' : 'Connect'} <Link2 size={14} /></Button>}</div>{isConnected && <div className="mt-3 text-[10px] text-[#8a9a92]">Last verified {item.lastVerifiedAt ? new Date(item.lastVerifiedAt).toLocaleString() : 'recently'}</div>}</div>; })}</div>}
+  </SettingsLayout>;
 }
 
 function ContactsPage() {
@@ -289,7 +464,7 @@ function AIAssistantPageV2() {
   return <SettingsLayout title="AI assistant" description="Create helpful, bounded assistance for your team. The assistant stays off until you connect a channel and publish your settings." action={<Button onClick={() => setEnabled(!enabled)}>{enabled ? 'Save and publish' : 'Save draft'} <Save size={14} /></Button>}><div className="space-y-5"><section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#e8f2e4] text-[#39745a]"><Bot size={21} /></div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">Assistant status</h2><p className="mt-1 text-[11px] text-[#82938b]">Enable only after reviewing your training and handoff rules.</p></div></div><Toggle checked={enabled} onChange={() => setEnabled(!enabled)} label={enabled ? 'On' : 'Off'} /></div></section><section className="grid gap-5 md:grid-cols-2"><label className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Assistant name</span><input defaultValue="FansConnect Assistant" className="focus-ring mt-3 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none" /></label><label className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><span className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Default language</span><select defaultValue="English + Arabic" className="focus-ring mt-3 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3.5 py-3 text-sm font-bold outline-none"><option>English + Arabic</option><option>English</option><option>Arabic</option></select></label></section><section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><h2 className="font-display text-[16px] font-extrabold text-[#315f54]">Handoff rules</h2><div className="mt-4 space-y-3">{['Ask for a human when a customer requests a team member.', 'Never invent availability, pricing, or order status.', 'Escalate complaints and sensitive conversations.'].map(rule => <label key={rule} className="flex items-center gap-3 rounded-xl bg-[#f4f1e8] p-3 text-xs font-bold text-[#557269]"><input type="checkbox" defaultChecked className="accent-[#39745a]" />{rule}</label>)}</div></section></div></SettingsLayout>;
 }
 
-function ChannelsPageV2() {
+function LegacyChannelsPageV2() {
   return <SettingsLayout title="Channels" description="Connect WhatsApp Business and Instagram to bring customer conversations into one shared inbox."><div className="grid gap-5 md:grid-cols-2"><div className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#d8f0dc] text-[#287550]"><MessageCircle size={22} /></div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">WhatsApp Business</h2><p className="mt-1 text-[11px] text-[#82938b]">Not connected</p></div></div><p className="mt-6 text-xs leading-5 text-[#71857b]">Connect your business number to receive messages, send approved templates, and keep your team in sync.</p><Button className="mt-5">Connect WhatsApp <Link2 size={14} /></Button></div><div className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5 shadow-[var(--shadow-soft)]"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#f6dbe8] text-[#a14472]"><Instagram size={22} /></div><div><h2 className="font-display text-[17px] font-extrabold text-[#315f54]">Instagram Direct</h2><p className="mt-1 text-[11px] text-[#82938b]">Not connected</p></div></div><p className="mt-6 text-xs leading-5 text-[#71857b]">Connect a professional account to manage direct messages alongside WhatsApp.</p><Button className="mt-5">Connect Instagram <Link2 size={14} /></Button></div></div></SettingsLayout>;
 }
 

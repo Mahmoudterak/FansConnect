@@ -1,2 +1,27 @@
 export * from "./generated/api";
-export * from "./generated/types";
+
+export type { Channel } from "./generated/types/channel";
+export type { ChannelHealth } from "./generated/types/channelHealth";
+export type { ChannelHealthState } from "./generated/types/channelHealthState";
+export type { ChannelName } from "./generated/types/channelName";
+export type { ChannelStatus } from "./generated/types/channelStatus";
+export type { ConnectChannelRequest } from "./generated/types/connectChannelRequest";
+export type { ConnectChannelResponse } from "./generated/types/connectChannelResponse";
+export type { Conversation } from "./generated/types/conversation";
+export type { ConversationHandoff } from "./generated/types/conversationHandoff";
+export type { ConversationStatus } from "./generated/types/conversationStatus";
+export type { HandoffConversation200 } from "./generated/types/handoffConversation200";
+export type { HealthStatus } from "./generated/types/healthStatus";
+export type { ListWorkspaceChannels200 } from "./generated/types/listWorkspaceChannels200";
+export type { ListWorkspaceConversations200 } from "./generated/types/listWorkspaceConversations200";
+export type { Message } from "./generated/types/message";
+export type { MessageDeliveryStatus } from "./generated/types/messageDeliveryStatus";
+export type { MessageFrom } from "./generated/types/messageFrom";
+export type { MessageRequest } from "./generated/types/messageRequest";
+export type { Plan } from "./generated/types/plan";
+export type { PlanCatalog } from "./generated/types/planCatalog";
+export type { PlanLimits } from "./generated/types/planLimits";
+export type { ProviderError } from "./generated/types/providerError";
+export type { SendConversationReply201 } from "./generated/types/sendConversationReply201";
+export type { WebhookEvent } from "./generated/types/webhookEvent";
+export type { WebhookEventEvent } from "./generated/types/webhookEventEvent";
