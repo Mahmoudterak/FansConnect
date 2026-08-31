@@ -1,0 +1,1529 @@
+# ============================================================
+# FANSCONNECT — REAL ONBOARDING & BUSINESS SETUP
+# CRITICAL PRODUCT LOGIC FIX
+# ============================================================
+
+IMPORTANT:
+
+The current onboarding/dashboard behavior is WRONG.
+
+When a new user registers, the application currently shows
+fake/demo business information such as:
+
+Bayt Noor Studio
+Riyadh
++966...
+Connected WhatsApp
+Fake customer names
+Fake metrics
+Fake Instagram account
+Fake conversations
+
+THIS IS NOT ALLOWED.
+
+FansConnect is a real SaaS platform.
+
+A newly registered customer must NEVER receive fake business data,
+fake connected channels, fake phone numbers, fake customers,
+fake conversations, fake analytics, or fake connection statuses.
+
+The system must start with an EMPTY REAL WORKSPACE and guide the
+customer through the actual setup process.
+
+============================================================
+1. NEW CUSTOMER FLOW
+============================================================
+
+The correct flow must be:
+
+REGISTER
+↓
+EMAIL VERIFICATION
+↓
+CREATE WORKSPACE
+↓
+BUSINESS PROFILE
+↓
+CONNECT WHATSAPP BUSINESS
+↓
+CREATE AUTO-REPLY RULES
+↓
+CONFIGURE AI ASSISTANT
+↓
+ADD CONVERSATION EXAMPLES
+↓
+REVIEW
+↓
+ACTIVATE
+↓
+DASHBOARD
+
+Do NOT send a new customer directly into a dashboard populated
+with demo information.
+
+============================================================
+2. FIRST LOGIN
+============================================================
+
+When a new customer logs in for the first time:
+
+Check:
+
+onboardingCompleted
+
+If:
+
+false
+
+redirect to:
+
+/onboarding
+
+Do NOT redirect directly to:
+
+/app
+
+until the minimum required setup is completed.
+
+============================================================
+3. EMPTY WORKSPACE
+============================================================
+
+Create the Workspace using real user-provided information.
+
+Initial state:
+
+workspace name:
+empty / user supplied
+
+business description:
+empty
+
+activity type:
+not selected
+
+services:
+empty
+
+WhatsApp:
+DISCONNECTED
+
+Instagram:
+DISCONNECTED
+
+AI:
+NOT CONFIGURED
+
+FAQ:
+empty
+
+Auto replies:
+empty
+
+Training examples:
+empty
+
+Contacts:
+0
+
+Leads:
+0
+
+Conversations:
+0
+
+Appointments:
+0
+
+Orders:
+0
+
+Analytics:
+0
+
+Never populate these with fake records.
+
+============================================================
+4. ONBOARDING STEP 1
+BUSINESS INFORMATION
+============================================================
+
+Page:
+
+"أهلاً بك في FansConnect"
+
+English:
+
+"Welcome to FansConnect"
+
+Explain:
+
+"لنبدأ بإعداد نشاطك حتى يتمكن المساعد من التعامل مع عملائك
+بالطريقة المناسبة لنشاطك."
+
+Fields:
+
+اسم النشاط
+نوع النشاط
+وصف مختصر
+المدينة
+الدولة
+رقم الهاتف
+البريد الإلكتروني
+
+Required:
+
+اسم النشاط
+نوع النشاط
+
+Optional:
+
+وصف مختصر
+المدينة
+الدولة
+الهاتف
+البريد الإلكتروني
+
+Save to the real Workspace/Tenant.
+
+============================================================
+5. ACTIVITY TYPE
+============================================================
+
+Provide activity selection.
+
+Categories:
+
+تجميل الأسنان
+طب الأسنان العام والوقائي
+جراحة الفم والأسنان
+أسنان الأطفال
+زراعة الأسنان
+علاج وترميم الأسنان
+
+Also support general activities:
+
+عيادة طبية
+مطعم
+صالون
+عقارات
+متجر إلكتروني
+سيارات
+فندق
+تعليم
+خدمات مهنية
+أخرى
+
+The selected activity must be stored in the database.
+
+Do NOT use fake activity data.
+
+============================================================
+6. BUSINESS DESCRIPTION
+============================================================
+
+The customer enters:
+
+وصف مختصر للنشاط
+
+Example placeholder:
+
+"عيادة أسنان تقدم خدمات علاجية وتجميلية للمرضى."
+
+Do NOT automatically insert this example into the customer's
+real profile.
+
+The placeholder must disappear once the customer types.
+
+============================================================
+7. SERVICES
+============================================================
+
+Create a real Services section.
+
+The customer can add:
+
+اسم الخدمة
+وصف الخدمة
+السعر
+العملة
+مدة الخدمة
+
+Buttons:
+
+إضافة خدمة
+تعديل
+حذف
+
+Services must be saved to the database.
+
+For example, if the customer owns a dental clinic, they may add:
+
+تنظيف وتلميع الأسنان
+تبييض الأسنان
+زراعة الأسنان
+تقويم الأسنان
+حشوات الأسنان
+
+These are examples only.
+
+Do NOT insert them automatically.
+
+============================================================
+8. WHATSAPP MUST COME BEFORE BOT ACTIVATION
+============================================================
+
+CRITICAL:
+
+The customer must connect WhatsApp Business before activating
+the AI assistant.
+
+Onboarding step:
+
+"اربط حساب WhatsApp Business"
+
+Explain:
+
+"اربط حساب WhatsApp Business الخاص بنشاطك حتى يتمكن FansConnect
+من استقبال رسائل العملاء والرد عليها."
+
+Options:
+
+Connect WhatsApp Business
+
+Provider:
+
+WHATSAPP_CLOUD
+
+Also support:
+
+SENDS_BOT
+
+But the customer must actually configure a provider.
+
+============================================================
+9. WHATSAPP CONNECTION
+============================================================
+
+Never display:
+
+Connected
+
+unless the connection is actually verified.
+
+Never display:
+
+fake phone number
+fake connected date
+fake message count
+fake health status
+
+Connection states:
+
+NOT_CONNECTED
+CONNECTING
+CONNECTED
+ERROR
+PAUSED
+
+When connected successfully:
+
+show the REAL:
+
+Business name
+Phone number
+Phone Number ID
+Provider
+Connection status
+Connection date
+Health
+
+Do not expose access tokens.
+
+Access tokens must remain encrypted.
+
+============================================================
+10. WHATSAPP CLOUD SETUP
+============================================================
+
+Allow customer/admin to provide:
+
+WhatsApp Business Phone Number ID
+WhatsApp Business Account ID if required
+Access Token
+
+Validate connection against Meta.
+
+Only after successful validation:
+
+status = CONNECTED
+
+If validation fails:
+
+status = ERROR
+
+Show a translated error message.
+
+Never pretend that the channel is connected.
+
+============================================================
+11. SENDS BOT
+============================================================
+
+If the customer selects Sends Bot:
+
+Require:
+
+Device ID
+
+Use:
+
+SENDSBOT_API_KEY
+
+from server environment.
+
+Never expose:
+
+SENDSBOT_API_KEY
+
+to the frontend.
+
+Verify device mapping.
+
+Only mark:
+
+CONNECTED
+
+after successful verification.
+
+============================================================
+12. AUTO REPLY
+============================================================
+
+After WhatsApp is connected, allow customer to create automatic
+reply rules.
+
+Page:
+
+"الرد التلقائي"
+
+English:
+
+"Auto Replies"
+
+The customer creates:
+
+KEYWORDS
++
+RESPONSE
+
+Example:
+
+Keywords:
+
+سعر
+الاسعار
+كم السعر
+
+Response:
+
+"يسعدنا مساعدتك. أخبرنا بالخدمة التي ترغب بمعرفة سعرها."
+
+IMPORTANT:
+
+This is an example only.
+
+Do NOT create it automatically.
+
+============================================================
+13. AUTO REPLY RULE STRUCTURE
+============================================================
+
+Each rule:
+
+name
+keywords
+matchType
+response
+priority
+enabled
+
+Match types:
+
+exact
+contains
+startsWith
+regex
+multiple_keywords
+
+The engine must evaluate priority.
+
+Rules must belong to:
+
+tenantId
+
+Never allow one tenant to access another tenant's rules.
+
+============================================================
+14. FAQ
+============================================================
+
+FAQ is different from Auto Reply.
+
+FAQ:
+
+Question
+Answer
+Category
+Priority
+Enabled
+
+FAQ should be used before AI where appropriate.
+
+FAQ responses should NOT consume AI tokens.
+
+============================================================
+15. AI ASSISTANT CONFIGURATION
+============================================================
+
+Create:
+
+AI Assistant
+
+Settings:
+
+Personality
+Language
+Arabic dialect
+Response length
+Welcome message
+Out-of-scope response
+Human handoff message
+AI failure message
+Business instructions
+
+Default personality:
+
+احترافي
+
+Default tone:
+
+مهني ومختصر
+
+Default language:
+
+Arabic
+
+But defaults must be editable.
+
+============================================================
+16. AI PERSONALITY OPTIONS
+============================================================
+
+Provide:
+
+ودود ومحترف
+رسمي ومختصر
+مرح وعفوي
+احترافي وتقني
+متعاطف وداعم
+
+The customer selects one.
+
+Store selection.
+
+============================================================
+17. RESPONSE STYLE
+============================================================
+
+Options:
+
+مختصر
+متوسط
+مفصل
+
+Default:
+
+مختصر
+
+Allow approximate response length.
+
+Do not artificially truncate required answers.
+
+============================================================
+18. ARABIC DIALECT
+============================================================
+
+Options:
+
+العربية الفصحى الحديثة
+اللهجة السعودية
+اللهجة المصرية
+اللهجة الخليجية
+اللهجة الشامية
+اللهجة المغربية
+
+Store selection.
+
+============================================================
+19. CONVERSATION EXAMPLES / TRAINING
+============================================================
+
+Create:
+
+"أمثلة المحادثات"
+
+The customer teaches the assistant using real examples.
+
+Each example contains:
+
+رسالة العميل
+
+رد صاحب النشاط
+
+ملاحظة للبوت
+
+Optional:
+
+صورة تعليمية
+
+The customer can add up to 20 examples.
+
+============================================================
+20. TRAINING EXAMPLE UI
+============================================================
+
+Form:
+
+💬 رسالة العميل
+
+[textarea]
+
+✍️ رد النشاط
+
+[textarea]
+
+📝 ملاحظة للبوت
+
+[textarea optional]
+
+🖼️ صورة تعليمية
+
+[upload optional]
+
+Button:
+
+إضافة مثال
+
+The system must save the example to the current tenant.
+
+Never mix training examples between tenants.
+
+============================================================
+21. TRAINING BEHAVIOR
+============================================================
+
+Training examples should influence AI style and business behavior.
+
+They must NOT override:
+
+System safety rules
+Tenant isolation
+Human handoff
+Provider policies
+Core system instructions
+
+The AI should learn:
+
+tone
+wording
+response style
+handling objections
+closing style
+business-specific answers
+
+============================================================
+22. WELCOME MESSAGE
+============================================================
+
+Allow the customer to configure:
+
+رسالة الترحيب
+
+This should be sent only according to the actual configured
+automation/provider logic.
+
+Do not send a fake welcome message during onboarding.
+
+============================================================
+23. OUT-OF-SCOPE RESPONSE
+============================================================
+
+Allow:
+
+رد على الأسئلة خارج نطاق النشاط
+
+Example placeholder:
+
+"هذا السؤال خارج نطاق خدماتنا. يسعدنا مساعدتك في خدماتنا المتاحة."
+
+Again:
+
+PLACEHOLDER ONLY.
+
+Do not save automatically unless customer confirms.
+
+============================================================
+24. HUMAN HANDOFF
+============================================================
+
+Configure:
+
+رسالة التحويل لموظف
+
+Detect common phrases:
+
+أريد موظف
+أريد التحدث مع شخص
+كلمني موظف
+موظف لو سمحت
+أريد التحدث مع خدمة العملاء
+human
+agent
+
+When triggered:
+
+AI pauses
+Conversation becomes:
+NEEDS_HUMAN
+
+Notify staff.
+
+============================================================
+25. AI FAILURE
+============================================================
+
+Configure:
+
+رسالة فشل الذكاء الاصطناعي
+
+If AI fails:
+
+Do not expose technical error.
+
+Send configured customer-safe message.
+
+Log technical error internally.
+
+============================================================
+26. FINAL REVIEW
+============================================================
+
+Before activation show:
+
+Business information
+Activity
+Services
+WhatsApp
+Auto replies
+AI settings
+Training examples
+
+Display status:
+
+✓ Business profile
+✓ WhatsApp
+✓ AI configuration
+✓ Auto replies
+✓ Training
+
+If WhatsApp is not connected:
+
+DO NOT allow:
+
+Activate Assistant
+
+Instead:
+
+"اربط WhatsApp أولاً لتفعيل المساعد."
+
+============================================================
+27. ACTIVATE
+============================================================
+
+Button:
+
+"تفعيل FansConnect"
+
+After activation:
+
+onboardingCompleted = true
+
+assistantStatus = ACTIVE
+
+Only if minimum required configuration is valid.
+
+Then redirect:
+
+/app
+
+============================================================
+28. DASHBOARD AFTER FIRST SETUP
+============================================================
+
+A new customer with no conversations must see:
+
+0 Conversations
+0 Leads
+0 Appointments
+0 Orders
+
+NOT:
+
+128 conversations
+23 leads
+12 appointments
+
+Show helpful empty states.
+
+Example:
+
+"لم تصل أي محادثات بعد."
+
+"اربط WhatsApp وابدأ استقبال رسائل عملائك."
+
+============================================================
+29. EMPTY CHANNEL STATE
+============================================================
+
+If WhatsApp is not connected:
+
+Show:
+
+"WhatsApp غير متصل"
+
+Button:
+
+"ربط WhatsApp Business"
+
+If connected:
+
+show actual account.
+
+Never fake:
+
+Connected
+
+============================================================
+30. EMPTY CRM
+============================================================
+
+Contacts:
+
+0
+
+Message:
+
+"ستظهر جهات الاتصال هنا عند بدء استقبال المحادثات."
+
+Leads:
+
+0
+
+Appointments:
+
+0
+
+============================================================
+31. REMOVE DEMO DATA
+============================================================
+
+Search the entire project for all demo values.
+
+Remove from production UI:
+
+Bayt Noor Studio
+Bas ma Noor
+Amina Al-Harbi
+Marian Studio
+Omar Khalid
+Noor Al-Sabah
+The Palm House
++966 55...
+Riyadh
+SAR 349
+SAR 149
+SAR 699
+1248 messages
+128 conversations
+23 leads
+12 appointments
+
+These values may remain ONLY in isolated development/test fixtures
+if they are never exposed to real customers.
+
+============================================================
+32. DATABASE
+============================================================
+
+Ensure all business configuration is tenant-owned.
+
+Use:
+
+tenantId
+
+for:
+
+Business Profile
+Services
+FAQ
+AutoReplyRule
+TrainingExample
+AI configuration
+Contacts
+Messages
+Conversations
+Leads
+Appointments
+Orders
+Channels
+
+============================================================
+33. NEW USER DEFAULTS
+============================================================
+
+On registration create:
+
+User
+
+Tenant/Workspace
+
+but with EMPTY business data.
+
+Allowed defaults:
+
+language = ar
+AI personality = PROFESSIONAL
+response style = SHORT
+AI = PAUSED
+WhatsApp = NOT_CONNECTED
+Instagram = NOT_CONNECTED
+onboardingCompleted = false
+
+Do NOT create fake content.
+
+============================================================
+34. FIRST LOGIN REDIRECT
+============================================================
+
+If:
+
+onboardingCompleted === false
+
+redirect:
+
+/onboarding
+
+If:
+
+onboardingCompleted === true
+
+redirect:
+
+/app
+
+============================================================
+35. AUTHENTICATION
+============================================================
+
+Registration must create REAL user records.
+
+Never show:
+
+demo credentials
+demo account
+pre-filled login information
+fake password
+fake phone number
+
+After registration:
+
+show actual account state.
+
+If email verification is enabled:
+
+show:
+
+"تحقق من بريدك الإلكتروني."
+
+Do not create fake verification state.
+
+============================================================
+36. SECURITY
+============================================================
+
+Never return:
+
+JWT secret
+API keys
+WhatsApp access token
+Sends Bot API key
+Ziina API key
+OpenAI API key
+
+to frontend.
+
+Never put secrets in React source.
+
+============================================================
+37. LANGUAGE
+============================================================
+
+Arabic must be a first-class language.
+
+All onboarding pages:
+
+Arabic
+English
+
+No hard-coded English.
+
+Arabic:
+
+dir=rtl
+
+English:
+
+dir=ltr
+
+Arabic sidebar:
+
+RIGHT
+
+English sidebar:
+
+LEFT
+
+============================================================
+38. ONBOARDING MOBILE
+============================================================
+
+Must work on:
+
+Desktop
+Tablet
+Mobile
+
+No horizontal scrolling.
+
+Forms must remain usable.
+
+Progress indicator:
+
+1 معلومات النشاط
+2 الخدمات
+3 WhatsApp
+4 الرد التلقائي
+5 المساعد الذكي
+6 أمثلة المحادثات
+7 المراجعة
+
+============================================================
+39. BUSINESS PROFILE PAGE
+============================================================
+
+After onboarding create:
+
+Business Profile
+
+Fields:
+
+اسم النشاط
+نوع النشاط
+وصف مختصر
+الخدمات
+الهاتف
+البريد
+الموقع
+ساعات العمل
+طرق الدفع
+
+All editable later.
+
+============================================================
+40. BOT SETTINGS
+============================================================
+
+The AI configuration must be editable after onboarding.
+
+Route:
+
+/app/ai-assistant
+
+============================================================
+41. AUTO REPLY MANAGEMENT
+============================================================
+
+Route:
+
+/app/auto-replies
+
+Allow:
+
+Create
+Edit
+Delete
+Enable
+Disable
+Priority
+Test
+
+============================================================
+42. TRAINING
+============================================================
+
+Route:
+
+/app/training
+
+Allow:
+
+Create
+Edit
+Delete
+View
+Search
+
+Maximum:
+
+20 examples if this is the configured product limit.
+
+============================================================
+43. CHANNELS
+============================================================
+
+Route:
+
+/app/channels
+
+Show real channel state.
+
+Do NOT display:
+
+Instagram Connected
+
+unless actual Instagram integration exists.
+
+For unavailable integrations:
+
+"قريباً"
+or
+"غير متصل"
+
+Do not fake connectivity.
+
+============================================================
+44. DASHBOARD METRICS
+============================================================
+
+All metrics must be calculated from database.
+
+New workspace:
+
+Conversations = 0
+Leads = 0
+Appointments = 0
+Orders = 0
+
+Do not show screenshot metrics.
+
+============================================================
+45. NOTIFICATIONS
+============================================================
+
+Only show real notifications.
+
+Do not show:
+
+3 unread
+12 messages
+etc.
+
+unless actual database state supports it.
+
+============================================================
+46. BILLING
+============================================================
+
+Currency:
+
+AED
+
+Plans:
+
+Solo
+149 AED / month
+
+Studio
+349 AED / month
+
+Business
+699 AED / month
+
+But plans must come from backend/database.
+
+Do not hard-code pricing in components.
+
+============================================================
+47. NO FAKE CONNECTIONS
+============================================================
+
+This is a hard rule.
+
+Never display:
+
+Connected
+Live
+Excellent
+Healthy
+
+unless backed by actual connection/health state.
+
+============================================================
+48. API INTEGRATION
+============================================================
+
+Frontend must use actual API endpoints.
+
+Business profile:
+real API
+
+Services:
+real API
+
+FAQ:
+real API
+
+Auto replies:
+real API
+
+Flows:
+real API
+
+Training:
+real API
+
+Channels:
+real API
+
+Dashboard:
+real API
+
+CRM:
+real API
+
+Do not replace API responses with mock arrays in production components.
+
+============================================================
+49. ERROR HANDLING
+============================================================
+
+If API unavailable:
+
+show:
+
+"تعذر الاتصال بالخادم."
+
+not:
+
+fake data.
+
+If WhatsApp connection fails:
+
+show:
+
+"تعذر ربط WhatsApp. تحقق من البيانات وحاول مرة أخرى."
+
+Do not mark connected.
+
+============================================================
+50. ONBOARDING STATE
+============================================================
+
+Persist progress.
+
+If customer completes:
+
+Business Profile
+
+but closes browser:
+
+return to the last incomplete step.
+
+Do not restart from zero.
+
+============================================================
+51. FINAL USER EXPERIENCE
+============================================================
+
+The first-time customer experience must be:
+
+REGISTER
+↓
+REAL ACCOUNT
+↓
+REAL EMPTY WORKSPACE
+↓
+SET BUSINESS
+↓
+CONNECT REAL WHATSAPP
+↓
+SET AUTO REPLIES
+↓
+SET AI
+↓
+ADD TRAINING EXAMPLES
+↓
+REVIEW
+↓
+ACTIVATE
+↓
+REAL DASHBOARD
+
+============================================================
+52. TEST CASE
+============================================================
+
+Create a completely NEW test account.
+
+Verify:
+
+1. Registration works.
+2. No demo data appears.
+3. Workspace is empty.
+4. Onboarding starts.
+5. Business profile saves.
+6. Activity saves.
+7. Services save.
+8. WhatsApp starts as NOT_CONNECTED.
+9. Auto reply can be created.
+10. AI personality saves.
+11. Arabic dialect saves.
+12. Response length saves.
+13. Training example saves.
+14. Multiple training examples work.
+15. Review displays actual entered data.
+16. Cannot activate without required WhatsApp connection.
+17. Dashboard contains zero metrics before real activity.
+18. No fake customer appears.
+19. No fake conversation appears.
+20. No fake connected channel appears.
+
+============================================================
+53. REGRESSION TEST
+============================================================
+
+Existing features must continue working:
+
+Authentication
+Tenant isolation
+FAQ
+Auto replies
+Conversation Engine
+Flows
+CRM
+WhatsApp
+Sends Bot
+AI
+Handoff
+Billing
+Analytics
+
+============================================================
+54. FINAL VISUAL CHECK
+============================================================
+
+The design should still follow the provided screenshots:
+
+Premium SaaS
+Warm off-white
+Forest green
+Mint
+Terracotta
+Rounded cards
+Clean typography
+Generous spacing
+
+But all data must now be REAL.
+
+============================================================
+55. FINAL BRAND
+============================================================
+
+Only:
+
+FansConnect
+
+must appear as the product brand.
+
+Remove:
+
+SahaAI
+sahaai
+Saha AI
+
+from customer-facing UI.
+
+============================================================
+56. BUILD
+============================================================
+
+Run:
+
+npm install
+npm run build
+npm test
+
+Then launch Preview.
+
+Actually test:
+
+/register
+/onboarding
+/app
+/app/channels
+/app/ai-assistant
+/app/auto-replies
+/app/training
+/app/business-profile
+
+============================================================
+57. FINAL REPORT
+============================================================
+
+Return:
+
+AUTH:
+PASS / FAIL
+
+REAL WORKSPACE:
+PASS / FAIL
+
+NO DEMO DATA:
+PASS / FAIL
+
+ONBOARDING:
+PASS / FAIL
+
+BUSINESS PROFILE:
+PASS / FAIL
+
+SERVICES:
+PASS / FAIL
+
+WHATSAPP CONNECTION:
+PASS / FAIL
+
+AUTO REPLIES:
+PASS / FAIL
+
+AI CONFIG:
+PASS / FAIL
+
+TRAINING:
+PASS / FAIL
+
+DASHBOARD:
+PASS / FAIL
+
+ARABIC:
+PASS / FAIL
+
+RTL:
+PASS / FAIL
+
+ENGLISH:
+PASS / FAIL
+
+LTR:
+PASS / FAIL
+
+RESPONSIVE:
+PASS / FAIL
+
+BUILD:
+PASS / FAIL
+
+TESTS:
+PASS / FAIL
+
+PREVIEW:
+PASS / FAIL
+
+============================================================
+FINAL RULE
+============================================================
+
+NO FAKE DATA.
+
+NO DEMO ACCOUNTS.
+
+NO FAKE LOGIN CREDENTIALS.
+
+NO FAKE WHATSAPP CONNECTION.
+
+NO FAKE INSTAGRAM CONNECTION.
+
+NO FAKE METRICS.
+
+NO FAKE CUSTOMERS.
+
+NO FAKE CONVERSATIONS.
+
+NO FAKE APPOINTMENTS.
+
+NO FAKE BILLING.
+
+A new customer must start with a REAL EMPTY WORKSPACE and
+configure their REAL business.
+
+WhatsApp connection must happen before bot activation.
+
+Auto replies must be configured as:
+
+KEYWORDS → RESPONSE
+
+Business Profile must contain:
+
+BUSINESS NAME
+ACTIVITY TYPE
+SHORT DESCRIPTION
+SERVICES
+
+AI Assistant must contain:
+
+PERSONALITY
+TONE
+LANGUAGE
+DIALECT
+RESPONSE LENGTH
+WELCOME MESSAGE
+OUT-OF-SCOPE RESPONSE
+HUMAN HANDOFF MESSAGE
+AI FAILURE MESSAGE
+BUSINESS RULES
+
+Training must contain:
+
+CUSTOMER MESSAGE
+BUSINESS RESPONSE
+OPTIONAL BOT NOTE
+OPTIONAL IMAGE
+
+Use the latest source package.
+
+Do not create a separate demo.
+
+Do not stop at visual changes.
+
+Implement the complete real workflow.

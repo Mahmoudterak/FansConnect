@@ -1,0 +1,1 @@
+- [Integration readiness boundary](integration-readiness.md) — preview surfaces must distinguish setup-required states from connected production data.
