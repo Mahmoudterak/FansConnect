@@ -1,0 +1,228 @@
+============================================================
+PRICING — UAE DIRHAM
+============================================================
+
+IMPORTANT:
+
+All FansConnect subscription plans must be priced in:
+
+AED — United Arab Emirates Dirham
+
+Do NOT use:
+
+SAR
+USD
+ريال
+$ 
+
+The default platform currency is:
+
+AED
+
+Display prices using:
+
+AED
+
+Examples:
+
+149 AED / month
+349 AED / month
+699 AED / month
+
+Arabic display:
+
+149 درهم / شهرياً
+349 درهم / شهرياً
+699 درهم / شهرياً
+
+English display:
+
+AED 149 / month
+AED 349 / month
+AED 699 / month
+
+============================================================
+PLAN CONFIGURATION
+============================================================
+
+Do not hard-code prices directly inside React components.
+
+Prices must come from backend/database plan configuration.
+
+Each Plan should have:
+
+name
+description
+price
+currency
+billingInterval
+limits
+features
+isPopular
+isActive
+
+Example:
+
+currency:
+"AED"
+
+billingInterval:
+"MONTHLY"
+
+============================================================
+PRICING PAGE
+============================================================
+
+Arabic:
+
+الباقات والأسعار
+
+اختر الباقة المناسبة لنشاطك.
+
+الباقة الأساسية
+149 درهم / شهرياً
+
+الباقة الاحترافية
+349 درهم / شهرياً
+
+باقة الأعمال
+699 درهم / شهرياً
+
+English:
+
+Plans & Pricing
+
+Choose the plan that fits your business.
+
+Solo
+AED 149 / month
+
+Studio
+AED 349 / month
+
+Business
+AED 699 / month
+
+============================================================
+BILLING
+============================================================
+
+Dashboard → Plan & Billing
+
+All prices must display in AED.
+
+Current plan:
+349 AED / month
+
+Billing history:
+349.00 AED
+
+Invoices:
+AED
+
+Never display SAR.
+
+============================================================
+ZIINA
+============================================================
+
+Ziina is the payment provider.
+
+All subscription checkout amounts must be sent using AED.
+
+Before creating checkout:
+
+- validate plan.currency === "AED"
+- validate amount
+- send correct AED amount to Ziina
+- never convert AED to SAR automatically
+
+============================================================
+DATABASE
+============================================================
+
+Existing Plan model must support:
+
+currency = AED
+
+If old plans contain SAR:
+
+DO NOT display them.
+
+Create/update production plans to AED.
+
+Recommended production plans:
+
+Solo:
+149 AED/month
+
+Studio:
+349 AED/month
+
+Business:
+699 AED/month
+
+============================================================
+FRONTEND VALIDATION
+============================================================
+
+Search the entire frontend and backend for:
+
+SAR
+ريال
+Saudi
+ر.س
+
+Remove them from customer-facing pricing/billing UI.
+
+Search for:
+
+$
+USD
+
+and remove them from subscription pricing unless explicitly required for another non-subscription feature.
+
+============================================================
+CURRENCY FORMATTING
+============================================================
+
+Use Intl.NumberFormat.
+
+Arabic:
+
+new Intl.NumberFormat("ar-AE", {
+  style: "currency",
+  currency: "AED"
+})
+
+English:
+
+new Intl.NumberFormat("en-AE", {
+  style: "currency",
+  currency: "AED"
+})
+
+Do not manually concatenate currency symbols where Intl formatting is appropriate.
+
+============================================================
+FINAL CHECK
+============================================================
+
+Test:
+
+Landing → Pricing
+Register → Choose Plan
+Checkout
+Dashboard → Billing
+Billing History
+Invoice
+
+Verify that every subscription price is displayed in AED.
+
+Arabic:
+درهم إماراتي
+
+English:
+AED
+
+There must be ZERO customer-facing SAR pricing.

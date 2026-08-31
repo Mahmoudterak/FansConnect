@@ -1,0 +1,1853 @@
+# ============================================================
+# FANSCONNECT — COMPLETE SAAS WEB PLATFORM
+# MASTER IMPLEMENTATION PROMPT
+# ============================================================
+
+IMPORTANT:
+You are working on an existing SaaS project.
+
+DO NOT start a new project.
+DO NOT rebuild the backend from scratch.
+DO NOT discard the existing architecture.
+DO NOT replace working functionality unnecessarily.
+
+Use the LATEST uploaded source package as the ONLY source of truth.
+
+The final product name is:
+
+FansConnect
+
+The old branding:
+SahaAI
+sahaai
+Saha AI
+
+must be completely removed from the product UI and replaced with:
+
+FansConnect
+
+============================================================
+1. PRODUCT OBJECTIVE
+============================================================
+
+Transform the existing project into a complete commercial SaaS WEB PLATFORM.
+
+This is NOT only:
+- an API
+- a chatbot
+- a backend
+- an admin dashboard
+
+It must be a complete website + SaaS application.
+
+The final architecture must provide:
+
+PUBLIC WEBSITE
++
+AUTHENTICATION
++
+ONBOARDING
++
+WORKSPACE
++
+AI ASSISTANT
++
+WHATSAPP
++
+INSTAGRAM ARCHITECTURE
++
+INBOX
++
+CRM
++
+AUTOMATION
++
+FLOWS
++
+APPOINTMENTS
++
+ORDERS
++
+ANALYTICS
++
+BILLING
++
+SUPER ADMIN
+
+============================================================
+2. EXISTING ARCHITECTURE — PRESERVE
+============================================================
+
+Backend:
+
+Express
+Prisma
+PostgreSQL
+
+Frontend:
+
+React
+Vite
+React Router
+
+Preserve existing:
+
+- Authentication
+- JWT
+- Tenant isolation
+- Prisma schema
+- Conversation Engine
+- FAQ
+- Auto Replies
+- Flows
+- AI
+- Human Handoff
+- CRM
+- WhatsApp Cloud architecture
+- Sends Bot
+- Ziina
+- Billing
+- Audit Logs
+- Webhooks
+- Usage tracking
+
+Do not rewrite working backend functionality unless required.
+
+============================================================
+3. BRAND
+============================================================
+
+Official product name:
+
+FansConnect
+
+Logo text:
+
+FansConnect
+
+Brand positioning:
+
+AI-powered customer conversation platform.
+
+FansConnect helps businesses manage:
+
+- WhatsApp conversations
+- Instagram conversations
+- AI customer service
+- Leads
+- CRM
+- Appointments
+- Orders
+- Automation
+- Conversation flows
+- Analytics
+
+The product must feel like a premium modern SaaS.
+
+============================================================
+4. DESIGN REFERENCE
+============================================================
+
+Use the provided screenshots as the PRIMARY visual reference.
+
+The screenshots show the desired:
+
+- layout
+- spacing
+- typography hierarchy
+- card style
+- sidebar
+- dashboard
+- inbox
+- billing
+- channels
+- landing page
+- visual language
+
+DO NOT copy:
+
+- SahaAI branding
+- screenshot customer names
+- screenshot phone numbers
+- screenshot dates
+- screenshot metrics
+- screenshot prices
+- fake customer conversations
+- fake business data
+
+Use the visual style only.
+
+============================================================
+5. VISUAL STYLE
+============================================================
+
+Design direction:
+
+Premium SaaS
+Minimal
+Modern
+Professional
+Calm
+High-end
+Clean
+Spacious
+
+Primary:
+
+Deep forest green
+
+Secondary:
+
+Soft mint green
+
+Background:
+
+Warm off-white / cream
+
+Accent:
+
+Warm terracotta / orange
+
+Supporting:
+
+Soft beige / muted gold
+
+Use:
+
+- rounded cards
+- subtle borders
+- subtle shadows
+- generous spacing
+- strong typography
+- clear hierarchy
+- restrained animations
+
+Avoid:
+
+- excessive gradients
+- excessive shadows
+- generic Bootstrap appearance
+- overly colorful UI
+- crowded layouts
+- cheap-looking components
+
+============================================================
+6. PUBLIC WEBSITE
+============================================================
+
+Create a complete public website.
+
+Routes:
+
+/
+ /features
+ /pricing
+ /faq
+ /contact
+ /login
+ /register
+ /forgot-password
+ /reset-password
+ /verify-email
+
+------------------------------------------------------------
+HOME PAGE
+------------------------------------------------------------
+
+Hero:
+
+Arabic:
+
+"كل محادثة مع عميل هي فرصة لبناء علاقة."
+
+English:
+
+"Every customer conversation can become a connection."
+
+Supporting Arabic:
+
+"يجمع FansConnect محادثات WhatsApp وInstagram في مساحة عمل ذكية واحدة، ويساعدك على الرد والمتابعة وتحويل المحادثات إلى عملاء."
+
+Supporting English:
+
+"FansConnect brings your WhatsApp and Instagram conversations into one intelligent workspace — helping your team respond faster, follow up better, and turn conversations into customers."
+
+Primary CTA:
+
+العربية:
+"ابدأ مجاناً"
+
+English:
+"Start free"
+
+Secondary:
+
+العربية:
+"كيف تعمل المنصة؟"
+
+English:
+"See how it works"
+
+------------------------------------------------------------
+HOME SECTIONS
+------------------------------------------------------------
+
+Create:
+
+1. Hero
+2. Social proof
+3. Product overview
+4. How it works
+5. Features
+6. Channels
+7. AI assistant
+8. CRM
+9. Automation
+10. Conversation flows
+11. Analytics
+12. Pricing preview
+13. FAQ
+14. Final CTA
+15. Footer
+
+Do not use fake statistics unless configured dynamically.
+
+============================================================
+7. HEADER
+============================================================
+
+Desktop:
+
+Logo
+Product
+How it works
+Features
+Pricing
+FAQ
+
+Right:
+
+Language selector
+Sign in
+Start free
+
+Arabic:
+
+RTL
+
+English:
+
+LTR
+
+Mobile:
+
+Hamburger menu
+Logo
+Language selector
+
+============================================================
+8. AUTHENTICATION
+============================================================
+
+Routes:
+
+/login
+/register
+/forgot-password
+/reset-password
+/verify-email
+
+Features:
+
+- Email
+- Password
+- Confirm password
+- Validation
+- Loading
+- Error
+- Success
+- Password visibility
+- Forgot password
+- Email verification
+
+Arabic and English completely supported.
+
+============================================================
+9. ONBOARDING
+============================================================
+
+After registration:
+
+/onboarding
+
+Wizard:
+
+STEP 1
+Welcome
+
+STEP 2
+Choose activity
+
+STEP 3
+Business information
+
+STEP 4
+Products / Services
+
+STEP 5
+AI Assistant
+
+STEP 6
+Channels
+
+STEP 7
+Review
+
+STEP 8
+Activate
+
+------------------------------------------------------------
+ACTIVITY TYPES
+------------------------------------------------------------
+
+Include:
+
+Dental Clinic
+Medical Clinic
+Restaurant
+Salon
+Real Estate
+E-commerce
+Automotive
+Hotel
+Education
+Professional Services
+Other
+
+Arabic labels must be available.
+
+============================================================
+10. WORKSPACE
+============================================================
+
+Each customer has a Workspace/Tenant.
+
+Workspace data must be dynamic.
+
+Never hard-code:
+
+Bayt Noor Studio
+Riyadh
+Bas ma Noor
+Amina
+Marian
+Omar
+
+Those are screenshot examples only.
+
+============================================================
+11. APPLICATION ROUTES
+============================================================
+
+Use:
+
+/app
+/app/inbox
+/app/contacts
+/app/leads
+/app/appointments
+/app/ai-assistant
+/app/flows
+/app/analytics
+/app/business-profile
+/app/channels
+/app/billing
+/app/catalog
+/app/orders
+/app/campaigns
+/app/training
+/app/settings
+
+============================================================
+12. DASHBOARD SIDEBAR
+============================================================
+
+English:
+
+FansConnect
+
+WORKSPACE
+Overview
+Inbox
+Contacts
+Leads
+Appointments
+
+AUTOMATION
+AI Assistant
+Flows
+Analytics
+
+WORKSPACE SETTINGS
+Business Profile
+Channels
+Plan & Billing
+
+Arabic:
+
+FansConnect
+
+مساحة العمل
+نظرة عامة
+صندوق الوارد
+جهات الاتصال
+العملاء المحتملون
+المواعيد
+
+الأتمتة
+المساعد الذكي
+التدفقات
+التحليلات
+
+إعدادات مساحة العمل
+ملف النشاط
+القنوات
+الباقة والفوترة
+
+Sidebar:
+
+English:
+LEFT
+
+Arabic:
+RIGHT
+
+============================================================
+13. DASHBOARD OVERVIEW
+============================================================
+
+Create premium dashboard matching screenshot style.
+
+Header:
+
+Workspace name
+Page title
+Search
+Notifications
+User
+
+Main:
+
+Arabic:
+
+"صباح الخير، [الاسم]."
+
+"إليك ملخص نشاط مساحة العمل الخاصة بك."
+
+English:
+
+"Good morning, [Name]."
+
+"Here is the pulse of your workspace."
+
+Metrics:
+
+Conversations
+Resolved by assistant
+New leads
+Appointments booked
+
+Additional:
+
+Conversation pulse
+Needs your attention
+Upcoming appointments
+Assistant health
+
+All values must come from API/database.
+
+Never use screenshot metrics.
+
+============================================================
+14. UNIFIED INBOX
+============================================================
+
+Three-column desktop layout:
+
+COLUMN 1:
+Conversation list
+
+COLUMN 2:
+Conversation thread
+
+COLUMN 3:
+Contact context
+
+Features:
+
+Search
+WhatsApp
+Instagram
+Open
+Unread
+Assigned agent
+Status
+Tags
+
+Conversation actions:
+
+Reply
+Assign
+Pause AI
+Resume AI
+Handoff
+Close
+
+Contact:
+
+Name
+Phone
+Email
+Tags
+Lead status
+Notes
+Source
+
+Mobile:
+
+Conversation list
+→ Conversation
+→ Contact details
+
+Do not create horizontal overflow.
+
+============================================================
+15. AI ASSISTANT
+============================================================
+
+Create a complete AI Assistant page.
+
+Settings:
+
+Personality
+Language
+Arabic dialect
+Response length
+Welcome message
+Out-of-scope response
+Human handoff message
+AI failure message
+Business rules
+Custom instructions
+
+Status:
+
+LIVE
+PAUSED
+
+Button:
+
+Test Assistant
+
+============================================================
+16. ARABIC AI BEHAVIOR
+============================================================
+
+When Arabic is selected:
+
+The system prompt must instruct AI:
+
+"Respond in Arabic using the configured Arabic dialect unless the customer clearly communicates in another language."
+
+When English:
+
+"Respond in English unless the customer clearly communicates in another language."
+
+Support:
+
+Arabic
+English
+Arabic + English mixed language
+
+Examples:
+
+"كم سعر تنظيف الأسنان؟"
+
+"أبغى appointment بكرة"
+
+"Can I book موعد tomorrow?"
+
+AI must understand these naturally.
+
+============================================================
+17. FAQ
+============================================================
+
+Create complete FAQ management:
+
+Create
+Edit
+Delete
+Enable
+Disable
+Search
+Category
+Priority
+
+FAQ responses should bypass AI where appropriate.
+
+FAQ should not consume AI tokens.
+
+============================================================
+18. AUTO REPLIES
+============================================================
+
+Create:
+
+Rule
+Trigger
+Match Type
+Response
+Priority
+Status
+
+Match types:
+
+exact
+contains
+startsWith
+regex
+multiple keywords
+
+Priority must be respected.
+
+============================================================
+19. FLOW BUILDER
+============================================================
+
+Create visual Flow Builder.
+
+Nodes:
+
+START
+MESSAGE
+QUESTION
+CHOICE
+CONDITION
+SET VARIABLE
+FAQ
+AI
+CREATE LEAD
+BOOK APPOINTMENT
+CREATE ORDER
+HUMAN HANDOFF
+END
+
+Flows must save to backend.
+
+Flows must execute through Conversation Engine.
+
+Do not make the Flow Builder visual-only.
+
+============================================================
+20. TRAINING
+============================================================
+
+Training examples:
+
+Customer message
+Business response
+Optional note
+Optional image
+
+Features:
+
+Create
+Edit
+Delete
+Enable/Disable
+Search
+
+Training must not override:
+
+System Prompt
+Safety rules
+Business rules
+Human handoff rules
+
+============================================================
+21. CRM
+============================================================
+
+Contacts
+Leads
+Customers
+
+Contact fields:
+
+Name
+Phone
+Email
+Tags
+Notes
+Lead status
+Source
+Assigned agent
+Custom fields
+Conversation history
+
+Lead statuses:
+
+New
+Contacted
+Qualified
+Won
+Lost
+
+============================================================
+22. APPOINTMENTS
+============================================================
+
+Appointment fields:
+
+Customer
+Service
+Date
+Time
+Timezone
+Employee
+Status
+Source
+
+Statuses:
+
+Requested
+Confirmed
+Completed
+Cancelled
+No-show
+
+IMPORTANT:
+
+Never confirm availability unless an actual Availability Provider confirms it.
+
+Create:
+
+AvailabilityProvider
+
+Future providers:
+
+Google Calendar
+Calendly
+Custom API
+
+============================================================
+23. CATALOG
+============================================================
+
+Products / Services:
+
+Name
+Description
+Price
+Currency
+Category
+Availability
+Image
+
+============================================================
+24. ORDERS
+============================================================
+
+Statuses:
+
+PENDING
+CONFIRMED
+PROCESSING
+SHIPPED
+DELIVERED
+CANCELLED
+
+Orders must connect to CRM/contact where applicable.
+
+============================================================
+25. CHANNELS
+============================================================
+
+Channels page based on screenshot.
+
+WhatsApp:
+
+Connected
+Disconnected
+Phone
+Connected since
+Messages this month
+Health
+Pause
+Resume
+Manage
+
+Instagram:
+
+Connected
+Disconnected
+Account
+Manage
+
+IMPORTANT:
+
+Do not display fake Connected status.
+
+Connection state must come from backend.
+
+============================================================
+26. WHATSAPP
+============================================================
+
+Provider abstraction:
+
+WhatsApp Cloud API
+Sends Bot
+
+Webhook:
+
+/webhook/whatsapp
+/webhook/sendsbot
+
+Features:
+
+Incoming messages
+Outgoing messages
+Duplicate protection
+Retry
+Tenant resolution
+Message logging
+
+Secrets must be encrypted.
+
+============================================================
+27. CONVERSATION ENGINE
+============================================================
+
+Central pipeline:
+
+Incoming Message
+→ Tenant Resolution
+→ Duplicate Check
+→ Contact
+→ FAQ
+→ Auto Reply
+→ Active Flow
+→ AI
+→ Message Logging
+→ Provider Response
+
+Do not bypass this architecture.
+
+============================================================
+28. HUMAN HANDOFF
+============================================================
+
+Detect:
+
+"أريد موظف"
+"أريد التحدث مع شخص"
+"كلمني موظف"
+"موظف لو سمحت"
+"human"
+"agent"
+
+When handoff occurs:
+
+- mark conversation
+- notify staff
+- pause AI
+- preserve messages
+- show "Needs attention"
+
+AI pause duration configurable.
+
+============================================================
+29. BILLING
+============================================================
+
+Billing page based on screenshot.
+
+Show:
+
+Current plan
+Price
+Renewal
+Payment method
+Plans
+Features
+Billing history
+Invoices
+
+Do not hard-code:
+
+SAR 149
+SAR 349
+SAR 699
+
+Plans come from backend.
+
+Currency comes from plan configuration.
+
+Payment provider:
+
+Ziina
+
+Do not expose API secrets.
+
+============================================================
+30. ANALYTICS
+============================================================
+
+Show:
+
+Conversations
+Incoming messages
+Outgoing messages
+AI resolved
+Human handoff
+Leads
+Conversion rate
+Appointments
+Orders
+Revenue
+AI usage
+
+Use real backend data.
+
+============================================================
+31. CAMPAIGNS
+============================================================
+
+Campaign architecture must include:
+
+Audience
+Template
+Schedule
+Status
+Rate limit
+Consent
+Opt-out
+
+Never send bulk messages without respecting provider limits and customer consent.
+
+============================================================
+32. SUPER ADMIN
+============================================================
+
+Separate protected admin area.
+
+Routes:
+
+/admin
+/admin/tenants
+/admin/users
+/admin/plans
+/admin/subscriptions
+/admin/payments
+/admin/usage
+/admin/ai-cost
+/admin/channels
+/admin/support
+/admin/audit-logs
+
+Only:
+
+SUPER_ADMIN
+
+can access.
+
+Tenant admins must never access other tenants.
+
+============================================================
+33. MULTI-TENANT SECURITY
+============================================================
+
+Every tenant-owned query must use:
+
+tenantId
+
+Prevent:
+
+IDOR
+cross-tenant access
+privilege escalation
+
+Test:
+
+Tenant A cannot access Tenant B.
+
+Return:
+
+403 or 404
+
+============================================================
+34. INTERNATIONALIZATION
+============================================================
+
+THIS IS CRITICAL.
+
+Arabic must be a REAL application language.
+
+Do not make a fake language switcher.
+
+Create:
+
+src/i18n/ar.js
+src/i18n/en.js
+src/i18n/index.js
+
+All user-visible text must use translation keys.
+
+No hard-coded English text in Arabic mode.
+
+============================================================
+35. LANGUAGE PERSISTENCE
+============================================================
+
+Persist selected language.
+
+Use:
+
+localStorage
+
+and where appropriate:
+
+User.language
+Workspace.language
+
+Language must survive:
+
+refresh
+login
+logout
+navigation
+browser restart
+
+============================================================
+36. RTL
+============================================================
+
+Arabic:
+
+<html lang="ar" dir="rtl">
+
+English:
+
+<html lang="en" dir="ltr">
+
+Change dynamically.
+
+No full reload required.
+
+Arabic sidebar:
+
+RIGHT
+
+English sidebar:
+
+LEFT
+
+Use CSS logical properties:
+
+margin-inline-start
+margin-inline-end
+padding-inline-start
+padding-inline-end
+inset-inline-start
+inset-inline-end
+
+Avoid unnecessary:
+
+left
+right
+margin-left
+margin-right
+padding-left
+padding-right
+
+============================================================
+37. ARABIC FONT
+============================================================
+
+Use:
+
+IBM Plex Sans Arabic
+
+or:
+
+Noto Sans Arabic
+
+Ensure production font loading works.
+
+============================================================
+38. ARABIC TRANSLATION
+============================================================
+
+Translate:
+
+Landing page
+Header
+Footer
+Navigation
+Dashboard
+Inbox
+Contacts
+Leads
+Appointments
+AI
+Flows
+Analytics
+Channels
+Billing
+Settings
+Login
+Register
+Onboarding
+FAQ
+Forms
+Validation
+Errors
+Loading
+Empty states
+Dialogs
+Notifications
+Tooltips
+Tables
+Filters
+Search
+Pagination
+
+No English UI leftovers.
+
+============================================================
+39. DATE / TIME / NUMBER LOCALIZATION
+============================================================
+
+Use Intl APIs.
+
+Arabic must correctly display:
+
+dates
+times
+numbers
+currency
+
+Respect:
+
+workspace timezone
+
+============================================================
+40. MOBILE
+============================================================
+
+Must work on:
+
+Desktop
+Laptop
+Tablet
+Mobile
+
+Mobile:
+
+Sidebar becomes drawer/navigation.
+
+Inbox becomes single-column.
+
+No horizontal scrolling.
+
+All buttons must remain accessible.
+
+============================================================
+41. ACCESSIBILITY
+============================================================
+
+Implement:
+
+Keyboard navigation
+Focus states
+ARIA labels
+Readable contrast
+Form labels
+Accessible dialogs
+
+Arabic ARIA labels must be translated.
+
+============================================================
+42. LOADING / ERROR / EMPTY STATES
+============================================================
+
+Every data page needs:
+
+Loading state
+Empty state
+Error state
+Retry
+
+Do not show blank screens.
+
+============================================================
+43. API ERROR HANDLING
+============================================================
+
+Never expose:
+
+Prisma errors
+SQL errors
+stack traces
+secrets
+
+Map backend error codes to user-friendly translated messages.
+
+============================================================
+44. BRAND CLEANUP
+============================================================
+
+Search entire project for:
+
+SahaAI
+sahaai
+Saha AI
+Bayt Noor Studio
+Bas ma Noor
+
+Remove old brand references.
+
+Do not remove legitimate test fixtures unless they are displayed in production UI.
+
+Update:
+
+HTML title
+favicon
+manifest
+metadata
+OpenGraph
+SEO
+emails
+footer
+login
+dashboard
+billing
+notifications
+
+============================================================
+45. SEO
+============================================================
+
+Public pages need:
+
+title
+description
+OpenGraph
+Twitter metadata
+canonical URLs
+
+Arabic metadata for Arabic pages.
+
+English metadata for English pages.
+
+============================================================
+46. PERFORMANCE
+============================================================
+
+Optimize:
+
+images
+fonts
+bundle
+lazy loading
+routes
+
+Do not sacrifice functionality for superficial optimization.
+
+============================================================
+47. SECURITY
+============================================================
+
+Check:
+
+JWT
+Rate limiting
+Security headers
+CORS
+Input validation
+Tenant isolation
+Webhook verification
+Encryption
+Audit logs
+
+No secrets in:
+
+source
+Git
+frontend bundle
+API response
+logs
+
+============================================================
+48. ENVIRONMENT
+============================================================
+
+Use:
+
+.env
+.env.example
+.env.production.example
+
+Variables:
+
+DATABASE_URL
+JWT_SECRET
+SECRETS_ENCRYPTION_KEY
+PORT
+DASHBOARD_ORIGIN
+OPENAI_API_KEY
+OPENAI_MODEL
+META_GRAPH_API_VERSION
+WHATSAPP_WEBHOOK_VERIFY_TOKEN
+ZIINA_API_KEY
+ZIINA_WEBHOOK_SECRET
+SENDSBOT_API_KEY
+APP_BASE_URL
+
+Never commit real credentials.
+
+============================================================
+49. DOCKER
+============================================================
+
+Keep:
+
+Dockerfile
+docker-compose.yml
+Nginx
+
+Internal PostgreSQL URL:
+
+postgres:5432
+
+Never:
+
+localhost
+
+for container-to-container database communication.
+
+Preserve PostgreSQL volume.
+
+Never run:
+
+docker compose down -v
+
+during development unless explicitly authorized.
+
+============================================================
+50. REPLIT LIMITATION
+============================================================
+
+The project is being developed in Replit.
+
+Previous diagnostics showed:
+
+OCI runtime exec failed:
+error executing setns process
+
+and Docker API → PostgreSQL TCP timeout.
+
+Do not modify application code to hide this environment limitation.
+
+Do not claim Docker production runtime is verified inside Replit if it is not.
+
+You may verify:
+
+- source
+- builds
+- Prisma
+- tests
+- API
+- frontend
+
+But clearly distinguish:
+
+BUILD VERIFIED
+TEST VERIFIED
+CONFIGURATION VERIFIED
+REPLIT DOCKER RUNTIME NOT VERIFIED
+
+============================================================
+51. TESTING
+============================================================
+
+Run:
+
+npm install
+npm run prisma:generate
+npm test
+npm run build
+
+If PostgreSQL is available:
+
+npm run prisma:migrate:deploy
+
+Test:
+
+FAQ routing
+Auto Reply
+Flow
+AI
+Handoff
+Webhook idempotency
+Encryption
+Tenant isolation
+API read/write
+Authentication
+
+============================================================
+52. FRONTEND TEST
+============================================================
+
+Launch Preview.
+
+Actually inspect rendered pages.
+
+Test:
+
+/
+ /features
+ /pricing
+ /faq
+ /contact
+ /login
+ /register
+
+Then:
+
+/app
+/app/inbox
+/app/contacts
+/app/leads
+/app/appointments
+/app/ai-assistant
+/app/flows
+/app/analytics
+/app/channels
+/app/billing
+
+============================================================
+53. ARABIC TEST
+============================================================
+
+This is mandatory.
+
+Switch to:
+
+العربية
+
+Verify:
+
+dir = rtl
+lang = ar
+
+Check:
+
+Landing
+Login
+Register
+Onboarding
+Dashboard
+Inbox
+Contacts
+Leads
+Appointments
+AI
+Flows
+Analytics
+Channels
+Billing
+Settings
+
+Verify:
+
+- sidebar right
+- correct alignment
+- correct arrows
+- correct spacing
+- Arabic font
+- no English UI
+- no horizontal overflow
+- mobile RTL
+- desktop RTL
+
+============================================================
+54. ENGLISH TEST
+============================================================
+
+Switch to:
+
+English
+
+Verify:
+
+dir = ltr
+lang = en
+
+All pages must return to proper LTR layout.
+
+============================================================
+55. NO DEMO DATA IN PRODUCTION
+============================================================
+
+The screenshots are design references only.
+
+Never hard-code:
+
+customer names
+phone numbers
+metrics
+prices
+appointments
+messages
+workspace names
+
+Use backend/database.
+
+============================================================
+56. USER JOURNEY TEST
+============================================================
+
+Test complete flow:
+
+Landing
+↓
+Start free
+↓
+Register
+↓
+Verify
+↓
+Login
+↓
+Choose activity
+↓
+Create workspace
+↓
+Choose plan
+↓
+Billing
+↓
+Onboarding
+↓
+Connect channel
+↓
+Configure AI
+↓
+Test assistant
+↓
+Activate bot
+↓
+Dashboard
+↓
+Receive message
+↓
+Conversation Engine
+↓
+FAQ / Auto Reply / Flow / AI
+↓
+Reply
+↓
+CRM
+↓
+Lead
+↓
+Handoff
+↓
+Analytics
+
+============================================================
+57. QUALITY STANDARD
+============================================================
+
+Do not accept:
+
+broken buttons
+broken routes
+fake connected status
+fake metrics
+fake billing
+fake API responses
+placeholder pages
+dead navigation
+English-only UI
+fake Arabic toggle
+hard-coded screenshot data
+console errors
+React warnings
+broken mobile layout
+
+============================================================
+58. FINAL BUILD
+============================================================
+
+After all changes:
+
+npm install
+npm run build
+npm test
+
+If Docker runtime is available:
+
+docker compose build
+
+Do not claim runtime verified unless actually tested.
+
+============================================================
+59. FINAL ZIP
+============================================================
+
+Create:
+
+FansConnect-production-v1-final.zip
+
+The ZIP must contain:
+
+Public Website
+Authentication
+Onboarding
+Dashboard
+Super Admin
+AI Assistant
+FAQ
+Auto Replies
+Flows
+Training
+CRM
+Inbox
+Appointments
+Orders
+Catalog
+Campaigns
+Analytics
+Billing
+WhatsApp architecture
+Sends Bot
+Instagram architecture
+PostgreSQL
+Prisma migrations
+Docker
+Nginx
+Tests
+Documentation
+
+Do NOT include:
+
+.env
+real API keys
+real passwords
+production secrets
+private credentials
+
+============================================================
+60. FINAL REPORT
+============================================================
+
+At the end provide ONLY:
+
+PROJECT:
+FansConnect
+
+BUILD:
+PASS / FAIL
+
+TESTS:
+PASS / FAIL
+
+ARABIC:
+PASS / FAIL
+
+RTL:
+PASS / FAIL
+
+ENGLISH:
+PASS / FAIL
+
+LTR:
+PASS / FAIL
+
+RESPONSIVE:
+PASS / FAIL
+
+PREVIEW:
+PASS / FAIL
+
+AUTH:
+PASS / FAIL
+
+DASHBOARD:
+PASS / FAIL
+
+INBOX:
+PASS / FAIL
+
+AI:
+PASS / FAIL
+
+FAQ:
+PASS / FAIL
+
+FLOWS:
+PASS / FAIL
+
+CRM:
+PASS / FAIL
+
+BILLING:
+PASS / FAIL
+
+WHATSAPP:
+TESTED / READY FOR CONFIGURATION
+
+SENDS BOT:
+TESTED / READY FOR CONFIGURATION
+
+INSTAGRAM:
+TESTED / READY FOR CONFIGURATION
+
+DOCKER:
+VERIFIED / NOT VERIFIED IN REPLIT
+
+ROOT CAUSE OF ANY FAILURE:
+[short explanation]
+
+REMAINING:
+[list only actual remaining items]
+
+FINAL ZIP:
+[path]
+
+============================================================
+FINAL RULE
+============================================================
+
+Do not stop after changing the design.
+
+The objective is a FUNCTIONAL WEBSITE.
+
+The user should be able to open FansConnect in a browser, understand the product, register, create a workspace, configure the assistant, and reach a functional SaaS dashboard.
+
+The UI must look like a premium SaaS product based on the supplied screenshots.
+
+Arabic must work completely.
+
+FansConnect must be the only visible product branding.
+
+Use the latest source package as the foundation.
+
+Do not start over.
+Do not create a separate demo.
+Do not fake integrations.
+Do not claim verification without actually testing it.
