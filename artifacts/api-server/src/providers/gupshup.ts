@@ -1,5 +1,6 @@
 const GUPSHUP_API_BASE = "https://api.gupshup.io";
 const GUPSHUP_SEND_URL = `${GUPSHUP_API_BASE}/sm/api/v1/msg`;
+const GUPSHUP_PARTNER_API_BASE = "https://partner.gupshup.io";
 
 export type GupshupChannelData = {
   appId: string;
@@ -21,6 +22,11 @@ export type GupshupEmbeddedSignupConfig = {
   signupUrl: string;
   callbackUrl: string;
   returnUrl?: string;
+};
+
+export type VerifiedGupshupEmbeddedApp = GupshupChannelData & {
+  providerAccountId: string;
+  displayName: string;
 };
 
 function apiKey(): string {
@@ -48,11 +54,45 @@ export function gupshupEmbeddedSignupConfig(): GupshupEmbeddedSignupConfig | nul
   const signupUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_URL);
   const callbackUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_CALLBACK_URL);
   const returnUrl = configuredHttpsUrl(process.env.GUPSHUP_EMBEDDED_SIGNUP_RETURN_URL);
-  if (!signupUrl || !callbackUrl) return null;
+  if (!signupUrl || !callbackUrl || !process.env.GUPSHUP_PARTNER_TOKEN?.trim()) return null;
   return {
     signupUrl: signupUrl.toString(),
     callbackUrl: callbackUrl.toString(),
     returnUrl: returnUrl?.toString(),
+  };
+}
+
+export async function verifyGupshupEmbeddedApp(appId: string): Promise<VerifiedGupshupEmbeddedApp> {
+  const partnerToken = process.env.GUPSHUP_PARTNER_TOKEN?.trim();
+  if (!partnerToken) throw new Error("Gupshup Partner authentication is unavailable.");
+  const base = process.env.GUPSHUP_PARTNER_API_BASE?.trim() || GUPSHUP_PARTNER_API_BASE;
+  const response = await fetch(`${base}/partner/app/${encodeURIComponent(appId)}/details`, {
+    headers: {
+      accept: "application/json",
+      token: partnerToken,
+    },
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    status?: string;
+    app?: Record<string, unknown>;
+    appDetails?: Record<string, unknown>;
+  };
+  const app = payload.app || payload.appDetails;
+  const verifiedId = typeof app?.id === "string" ? app.id.trim() : "";
+  const appName = typeof app?.name === "string" ? app.name.trim() : "";
+  const source = typeof app?.phone === "string" ? app.phone.replace(/[^\d]/g, "") : "";
+  const isLive = app?.live === true;
+  const isStopped = app?.stopped === true;
+  const embedAllowed = app?.embedAllowed !== false;
+  if (!response.ok || payload.status !== "success" || verifiedId !== appId || !appName || !source || !isLive || isStopped || !embedAllowed) {
+    throw new Error("Gupshup embedded app verification failed.");
+  }
+  return {
+    appId: verifiedId,
+    appName,
+    source,
+    providerAccountId: verifiedId,
+    displayName: appName,
   };
 }
 

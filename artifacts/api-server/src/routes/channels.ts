@@ -20,6 +20,7 @@ import {
   normalizeGupshupPayload,
   parseGupshupChannelData,
   sendGupshupText,
+  verifyGupshupEmbeddedApp,
   verifyGupshupChannel,
   type GupshupChannelData,
 } from "../providers/gupshup";
@@ -79,6 +80,7 @@ const router: IRouter = Router();
 const CUSTOMER_CONNECTION_ERROR = "Unable to connect WhatsApp right now. Please try again later.";
 const CUSTOMER_SEND_ERROR = "The message could not be sent right now. Please try again later.";
 const GUPSHUP_PARTNER_SETUP_MESSAGE = "Embedded Signup is unavailable until Gupshup Partner or Tech Provider onboarding is configured.";
+const GUPSHUP_SIGNUP_STATE_TTL_MS = 20 * 60 * 1000;
 
 const channelLabels: Record<ChannelName, string> = {
   whatsapp: "WhatsApp Business",
@@ -487,6 +489,10 @@ async function connectGupshupChannel(
   const state = new URL(connectUrl).searchParams.get("state");
   if (!state) throw new Error("Embedded Signup state could not be created.");
   record.provider = "GUPSHUP";
+  record.providerData = {
+    ...record.providerData,
+    embeddedSignupIssuedAt: new Date().toISOString(),
+  };
   record.status = "connecting";
   record.failureReason = undefined;
   record.failureCode = undefined;
@@ -502,12 +508,9 @@ async function connectGupshupChannel(
   };
 }
 
-function gupshupCallbackData(query: Request["query"]): GupshupChannelData | null {
-  return parseGupshupChannelData({
-    appId: query.appId ?? query.app_id,
-    appName: query.appName ?? query.app_name ?? query.app,
-    source: query.source ?? query.phone ?? query.phoneNumber ?? query.phone_number,
-  });
+function gupshupCallbackAppId(query: Request["query"]): string | null {
+  const value = query.appId ?? query.app_id;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function redirectAfterGupshupCallback(res: Response, status: "connected" | "failed") {
@@ -956,6 +959,17 @@ async function workspaceForGupshupPayload(
 }
 
 export async function gupshupWebhookHandler(req: Request, res: Response) {
+  const configuredSecret = process.env.GUPSHUP_WEBHOOK_SECRET?.trim();
+  const providedSecret = req.header("x-gupshup-webhook-token")?.trim()
+    || (typeof req.query.token === "string" ? req.query.token.trim() : "");
+  if (!configuredSecret || !providedSecret) {
+    return res.status(401).json({ error: "webhook_authentication_required" });
+  }
+  const configured = Buffer.from(configuredSecret);
+  const provided = Buffer.from(providedSecret);
+  if (configured.length !== provided.length || !timingSafeEqual(configured, provided)) {
+    return res.status(401).json({ error: "webhook_authentication_failed" });
+  }
   const payload =
     req.body && typeof req.body === "object"
       ? req.body as Record<string, unknown>
@@ -1168,28 +1182,39 @@ router.get("/oauth/meta/callback", async (req, res) => {
 router.get("/oauth/gupshup/callback", async (req, res) => {
   const state = typeof req.query.state === "string" ? req.query.state : undefined;
   if (!state) return res.status(400).json({ error: "provider_state_required" });
-  const [row] = await db.select()
-    .from(channels)
-    .where(and(eq(channels.oauthState, state), eq(channels.provider, "GUPSHUP")))
-    .limit(1);
+  const [row] = await db.update(channels)
+    .set({ oauthState: null, updatedAt: new Date() })
+    .where(and(
+      eq(channels.oauthState, state),
+      eq(channels.provider, "GUPSHUP"),
+      eq(channels.status, "CONNECTING"),
+    ))
+    .returning();
   if (!row) return res.status(400).json({ error: "invalid_provider_state" });
   const workspaceId = row.workspaceId;
   const channel = channelFromRow(row);
-  const data = gupshupCallbackData(req.query);
-  if (!data) {
+  const issuedAt = typeof channel.providerData.embeddedSignupIssuedAt === "string"
+    ? new Date(channel.providerData.embeddedSignupIssuedAt).getTime()
+    : Number.NaN;
+  const appId = gupshupCallbackAppId(req.query);
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > GUPSHUP_SIGNUP_STATE_TTL_MS || !appId) {
     await persistChannelFailure(
       workspaceId,
       channel,
-      new Error("Gupshup did not return the required app details."),
+      new Error("Gupshup signup state expired or returned incomplete app details."),
       "provider_callback_incomplete",
     );
     if (redirectAfterGupshupCallback(res, "failed")) return;
     return res.status(400).json({ error: channel.failureCode, message: CUSTOMER_CONNECTION_ERROR });
   }
   try {
-    const verified = await verifyGupshupChannel(data);
+    const verified = await verifyGupshupEmbeddedApp(appId);
     const now = new Date().toISOString();
-    channel.providerData = data;
+    channel.providerData = {
+      appId: verified.appId,
+      appName: verified.appName,
+      source: verified.source,
+    };
     channel.providerAccountId = verified.providerAccountId;
     channel.displayName = verified.displayName;
     channel.status = "connected";

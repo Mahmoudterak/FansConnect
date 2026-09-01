@@ -1088,8 +1088,98 @@ function EmptyWorkspacePage({ title, eyebrow, description, countKey, icon: Icon 
 
 function LiveAssistantPage() {
   const { t } = useLanguage();
-  const status = useAuth().workspace?.assistant?.status || 'PAUSED';
-  return <Shell><PageHeading eyebrow="Automation" title="AI assistant" description="The assistant remains paused until you configure and publish verified workspace settings." /><div className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-6"><Bot size={24} className="text-[#39745a]" /><div className="mt-4 text-xs font-bold uppercase text-[#628570]">{t('Assistant health')}</div><div className="mt-2 font-display text-2xl font-extrabold text-[#28574d]">{t(status)}</div></div></Shell>;
+  const auth = useAuth();
+  const [setup, setSetup] = useState<WorkspaceSetup | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'saving'>('loading');
+  const [notice, setNotice] = useState('');
+  const [form, setForm] = useState({
+    personality: 'PROFESSIONAL',
+    language: 'ar' as 'ar' | 'en',
+    dialect: 'MODERN_STANDARD_ARABIC',
+    responseStyle: 'SHORT',
+    welcomeMessage: '',
+    outOfScopeResponse: '',
+    humanHandoffMessage: '',
+    aiFailureMessage: '',
+    businessInstructions: '',
+  });
+  const load = useCallback(async () => {
+    setState('loading');
+    try {
+      const result = await apiRequest<WorkspaceSetup>('/workspace/setup');
+      setSetup(result);
+      if (result.assistant) setForm({
+        personality: result.assistant.personality,
+        language: result.assistant.language,
+        dialect: result.assistant.dialect,
+        responseStyle: result.assistant.responseStyle,
+        welcomeMessage: result.assistant.welcomeMessage,
+        outOfScopeResponse: result.assistant.outOfScopeResponse,
+        humanHandoffMessage: result.assistant.humanHandoffMessage,
+        aiFailureMessage: result.assistant.aiFailureMessage,
+        businessInstructions: result.assistant.businessInstructions,
+      });
+      setState('ready');
+    } catch {
+      setState('error');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const save = async () => {
+    setState('saving');
+    setNotice('');
+    try {
+      await apiRequest('/workspace/assistant', { method: 'PATCH', body: JSON.stringify(form) });
+      await Promise.all([load(), auth.refresh()]);
+      setNotice('Assistant settings saved.');
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Unable to save assistant settings.');
+      setState('ready');
+    }
+  };
+  const activate = async () => {
+    setState('saving');
+    setNotice('');
+    try {
+      await apiRequest('/workspace/activate', { method: 'POST' });
+      await Promise.all([load(), auth.refresh()]);
+      setNotice('Assistant activated. Incoming WhatsApp messages can now receive approved automatic replies.');
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'The assistant could not be activated.');
+      setState('ready');
+    }
+  };
+  const pause = async () => {
+    setState('saving');
+    try {
+      await apiRequest('/workspace/pause', { method: 'POST' });
+      await Promise.all([load(), auth.refresh()]);
+      setNotice('Assistant paused. Incoming messages will still be stored, but no automatic replies will be sent.');
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'The assistant could not be paused.');
+      setState('ready');
+    }
+  };
+  if (state === 'loading') return <Shell><div className="rounded-2xl border border-dashed p-10 text-center text-xs font-bold text-[#6e8579]">{t('Loading workspace settings…')}</div></Shell>;
+  if (state === 'error' || !setup) return <Shell><div className="rounded-2xl border border-[#e9c5be] bg-[#fdf3f0] p-8 text-center"><AlertCircle className="mx-auto text-[#a25243]" /><p className="mt-3 text-xs font-bold text-[#a25243]">{t('Could not connect to the server.')}</p><Button className="mt-4" onClick={() => void load()}>{t('Retry')}</Button></div></Shell>;
+  const active = setup.assistant?.status === 'ACTIVE';
+  const whatsappConnected = setup.channels.some((item) => item.type === 'WHATSAPP' && item.status === 'CONNECTED');
+  const hasReplies = setup.faq.some((item) => item.enabled) || setup.autoReplies.some((item) => item.enabled);
+  const readiness = [
+    { label: 'Business profile', ready: Boolean(setup.profile?.businessName && setup.profile.activityType) },
+    { label: 'Verified WhatsApp', ready: whatsappConnected },
+    { label: 'Enabled FAQ or auto-reply', ready: hasReplies },
+  ];
+  const field = (key: keyof typeof form, placeholder: string, multiline = false) => multiline
+    ? <textarea value={form[key]} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} placeholder={placeholder} className="mt-2 min-h-24 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3 py-3 text-xs" />
+    : <input value={form[key]} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} placeholder={placeholder} className="mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3 py-3 text-xs" />;
+  return <Shell><PageHeading eyebrow="Automation" title="AI assistant" description="Configure the assistant, save its boundaries, then activate it only when the verified WhatsApp channel and approved replies are ready." action={<div className="flex gap-2"><Button variant="secondary" onClick={() => void save()} disabled={state === 'saving'}><Save size={14} />Save settings</Button>{active ? <Button variant="danger" onClick={() => void pause()} disabled={state === 'saving'}><Pause size={14} />Pause assistant</Button> : <Button onClick={() => void activate()} disabled={state === 'saving' || !readiness.every((item) => item.ready)}><Play size={14} />Activate assistant</Button>}</div>} />
+    {notice && <div role="status" className="mb-5 rounded-xl border border-[#d9e6d6] bg-[#e8f2e4] px-4 py-3 text-xs font-bold text-[#39745a]">{t(notice)}</div>}
+    <div className="grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
+      <section className="rounded-2xl border border-[#dce5d9] bg-[#e8f2e4] p-5"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-xl bg-[#cae3ca] text-[#2d7054]"><Bot size={21} /></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-[#628570]">Assistant status</div><div className="mt-1 font-display text-2xl font-extrabold text-[#28574d]">{active ? 'ACTIVE' : 'PAUSED'}</div></div></div><p className="mt-4 text-xs leading-5 text-[#658477]">{active ? 'The bot is listening for incoming WhatsApp messages and will only use enabled FAQ and auto-reply content.' : 'The bot is paused. Messages are stored in the inbox, but automatic responses are disabled.'}</p><div className="mt-5 border-t border-[#d1e2d0] pt-4"><div className="text-[10px] font-bold uppercase tracking-wider text-[#628570]">Activation checklist</div><div className="mt-3 space-y-2">{readiness.map((item) => <div key={item.label} className="flex items-center gap-2 text-xs font-bold text-[#557269]">{item.ready ? <CheckCircle2 size={15} className="text-[#39745a]" /> : <AlertCircle size={15} className="text-[#b66c43]" />}{item.label}</div>)}</div></div></section>
+      <section className="rounded-2xl border border-[#e3ddd2] bg-[#fbf9f3] p-5"><div className="grid gap-4 md:grid-cols-2"><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Personality{field('personality', 'Professional')}</label><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Language<select value={form.language} onChange={(event) => setForm((value) => ({ ...value, language: event.target.value as 'ar' | 'en' }))} className="mt-2 w-full rounded-xl border border-[#e2dcd1] bg-[#f7f4eb] px-3 py-3 text-xs"><option value="ar">Arabic</option><option value="en">English</option></select></label><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890] md:col-span-2">Welcome message{field('welcomeMessage', 'Optional greeting sent in approved flows.', true)}</label><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Out-of-scope response{field('outOfScopeResponse', 'Tell customers what the assistant cannot answer.', true)}</label><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890]">Human handoff message{field('humanHandoffMessage', 'Tell customers when a team member will help.', true)}</label><label className="text-[11px] font-bold uppercase tracking-wider text-[#889890] md:col-span-2">Business instructions{field('businessInstructions', 'Boundaries, tone, and information the assistant must follow.', true)}</label></div></section>
+    </div>
+  </Shell>;
 }
 
 function AdminPage({ section = 'Overview' }: { section?: string }) {
@@ -1134,8 +1224,8 @@ function Router() {
     <Route path="/app/leads" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace" title="Leads" description="Real leads from your workspace." countKey="leads" icon={TrendingUp} />)} />
     <Route path="/app/appointments" component={() => protect(<EmptyWorkspacePage eyebrow="Workspace" title="Appointments" description="Real appointments from your workspace." countKey="appointments" icon={CalendarDays} />)} />
     <Route path="/app/ai-assistant" component={() => protect(<LiveAssistantPage />)} />
-    <Route path="/app/faq" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="FAQ & auto-replies" description="Approved FAQs and automatic replies from your workspace." countKey="faq" icon={CircleHelp} />)} />
-    <Route path="/app/training" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Training" description="Real training examples from your workspace." countKey="trainingExamples" icon={BookOpen} />)} />
+    <Route path="/app/faq" component={() => protect(<TrainingPage />)} />
+    <Route path="/app/training" component={() => protect(<TrainingPage />)} />
     <Route path="/app/flows" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Flows" description="Published automation flows from your workspace." icon={Workflow} />)} />
     <Route path="/app/analytics" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Analytics" description="Analytics appear after real workspace activity." countKey="conversations" icon={BarChart3} />)} />
     <Route path="/app/campaigns" component={() => protect(<EmptyWorkspacePage eyebrow="Automation" title="Campaigns" description="Real campaigns from your workspace." icon={Send} />)} />

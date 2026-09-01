@@ -3,8 +3,8 @@ import { createHmac, randomUUID } from "node:crypto";
 import { request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { after, before, beforeEach, describe, it } from "node:test";
 import express, { type Request } from "express";
-import { inArray } from "drizzle-orm";
-import { autoReplyRules, channels, contacts, db, faqItems, workspaces } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
+import { assistantConfigs, autoReplyRules, channels, contacts, db, faqItems, workspaces } from "@workspace/db";
 import channelsRouter from "../src/routes/channels";
 
 type Json = Record<string, unknown>;
@@ -23,6 +23,11 @@ const metaEnvKeys = [
   "META_WEBHOOK_VERIFY_TOKEN",
   "META_WHATSAPP_PHONE_NUMBER_ID",
   "gupshupAPPKAY",
+  "GUPSHUP_EMBEDDED_SIGNUP_URL",
+  "GUPSHUP_EMBEDDED_SIGNUP_CALLBACK_URL",
+  "GUPSHUP_PARTNER_TOKEN",
+  "GUPSHUP_PARTNER_API_BASE",
+  "GUPSHUP_WEBHOOK_SECRET",
 ];
 
 let server: Server;
@@ -252,6 +257,11 @@ before(async () => {
   process.env.META_GRAPH_URL = "https://meta.test/v21.0";
   process.env.META_WEBHOOK_VERIFY_TOKEN = "test-webhook-token";
   process.env.gupshupAPPKAY = "test-gupshup-key";
+  process.env.GUPSHUP_EMBEDDED_SIGNUP_URL = "https://partner.gupshup.test/embedded-signup";
+  process.env.GUPSHUP_EMBEDDED_SIGNUP_CALLBACK_URL = "https://example.test/api/oauth/gupshup/callback";
+  process.env.GUPSHUP_PARTNER_TOKEN = "test-partner-token";
+  process.env.GUPSHUP_PARTNER_API_BASE = "https://partner.gupshup.test";
+  process.env.GUPSHUP_WEBHOOK_SECRET = "test-gupshup-webhook-secret";
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -528,15 +538,30 @@ describe("Gupshup WhatsApp provider", () => {
       enabled: true,
       priority: 90,
     });
+    await db.insert(assistantConfigs).values({
+      workspaceId,
+      status: "ACTIVE",
+    }).onConflictDoUpdate({
+      target: assistantConfigs.workspaceId,
+      set: { status: "ACTIVE" },
+    });
 
     let outboundCalls = 0;
     (globalThis as { fetch: typeof fetch }).fetch = async (input, init) => {
       const url = new URL(String(input));
       assert.equal(init?.headers && new Headers(init.headers).get("apikey"), "test-gupshup-key");
-      if (url.pathname === "/wa/app/gupshup-app-id/business") {
+      if (url.pathname === "/partner/app/gupshup-app-id/details") {
+        assert.equal(init?.headers && new Headers(init.headers).get("token"), "test-partner-token");
         return jsonResponse({
           status: "success",
-          business: { id: "gupshup-app-id", name: "FansConnect Test" },
+          app: {
+            id: "gupshup-app-id",
+            name: "fansconnect-test",
+            phone: "971500000010",
+            live: true,
+            stopped: false,
+            embedAllowed: true,
+          },
         });
       }
       if (url.pathname === "/sm/api/v1/msg") {
@@ -560,16 +585,21 @@ describe("Gupshup WhatsApp provider", () => {
 
     const connected = await request("/api/workspaces/gupshup-faq/channels/whatsapp/connect", {
       method: "POST",
-      body: {
-        appId: "gupshup-app-id",
-        appName: "fansconnect-test",
-        source: "+971 50 000 0010",
-      },
+      body: {},
     });
-    assert.equal(connected.status, 200, JSON.stringify(connected.json));
-    assert.equal((connected.json.channel as Json).provider, "Gupshup");
-    assert.equal((connected.json.channel as Json).status, "connected");
-    assert.equal(JSON.stringify(connected.json).includes("test-gupshup-key"), false);
+    assert.equal(connected.status, 202, JSON.stringify(connected.json));
+    const connectUrl = new URL(String(connected.json.connectUrl));
+    const state = connectUrl.searchParams.get("state");
+    assert(state);
+    assert.equal(connectUrl.searchParams.get("redirect_uri"), process.env.GUPSHUP_EMBEDDED_SIGNUP_CALLBACK_URL);
+    const callback = await request(`/api/oauth/gupshup/callback?state=${encodeURIComponent(state)}&appId=gupshup-app-id`);
+    assert.equal(callback.status, 200, JSON.stringify(callback.json));
+    assert.equal((callback.json.channel as Json).provider, "Gupshup");
+    assert.equal((callback.json.channel as Json).status, "connected");
+    assert.equal(JSON.stringify(callback.json).includes("test-gupshup-key"), false);
+    const replayedCallback = await request(`/api/oauth/gupshup/callback?state=${encodeURIComponent(state)}&appId=gupshup-app-id`);
+    assert.equal(replayedCallback.status, 400);
+    assert.equal(replayedCallback.json.error, "invalid_provider_state");
 
     const webhookPayload: Json = {
       app: "fansconnect-test",
@@ -588,6 +618,7 @@ describe("Gupshup WhatsApp provider", () => {
     const first = await request("/api/webhook/gupshup", {
       method: "POST",
       body: webhookPayload,
+      headers: { "x-gupshup-webhook-token": "test-gupshup-webhook-secret" },
     });
     assert.equal(first.status, 202, JSON.stringify(first.json));
     assert.equal(first.json.automatedReplies, 1);
@@ -596,6 +627,7 @@ describe("Gupshup WhatsApp provider", () => {
     const duplicate = await request("/api/webhook/gupshup", {
       method: "POST",
       body: webhookPayload,
+      headers: { "x-gupshup-webhook-token": "test-gupshup-webhook-secret" },
     });
     assert.equal(duplicate.status, 202);
     assert.equal(duplicate.json.automatedReplies, 0);
@@ -612,6 +644,7 @@ describe("Gupshup WhatsApp provider", () => {
           payload: { text: "أريد موعد" },
         },
       },
+      headers: { "x-gupshup-webhook-token": "test-gupshup-webhook-secret" },
     });
     assert.equal(autoReply.status, 202);
     assert.equal(autoReply.json.automatedReplies, 1, JSON.stringify(autoReply.json));
@@ -629,6 +662,25 @@ describe("Gupshup WhatsApp provider", () => {
     const storedContacts = await db.select().from(contacts).where(inArray(contacts.workspaceId, [workspaceId]));
     assert.equal(storedContacts.length, 1);
     assert.equal(storedContacts[0].name, "محمد");
+
+    await db.update(assistantConfigs)
+      .set({ status: "PAUSED" })
+      .where(eq(assistantConfigs.workspaceId, workspaceId));
+    const whilePaused = await request("/api/webhook/gupshup", {
+      method: "POST",
+      body: {
+        ...webhookPayload,
+        payload: {
+          ...(webhookPayload.payload as Json),
+          id: "gupshup-inbound-while-paused",
+          payload: { text: "كم سعر تنظيف الأسنان؟" },
+        },
+      },
+      headers: { "x-gupshup-webhook-token": "test-gupshup-webhook-secret" },
+    });
+    assert.equal(whilePaused.status, 202);
+    assert.equal(whilePaused.json.automatedReplies, 0);
+    assert.equal(outboundCalls, 2);
   });
 
   it("returns a generic customer-safe error when platform authentication is unavailable", async () => {
